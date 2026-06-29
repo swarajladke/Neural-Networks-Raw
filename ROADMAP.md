@@ -9,9 +9,9 @@
 ## Overview
 
 ```
-Phase 0: Project Setup          [Active]
-Phase 1: Associative Memory     [Planned]
-Phase 2: Sequence Learning      [Planned]
+Phase 0: Project Setup          [Complete]
+Phase 1: Associative Memory     [Complete]
+Phase 2: Sequence Learning      [Active]
 Phase 3: Neurogenesis           [Planned]
 Phase 4: Character Language     [Planned]
 Phase 5: TinyStories Mini       [Conditional]
@@ -51,7 +51,7 @@ No phase is skipped. No mechanism is added without ablation.
 
 **Goal:** Prove reduced catastrophic forgetting on sequential associative mapping tasks under multiple difficulty conditions.
 
-**Status:** 🚧 v0.2 Benchmark Harness Completed (Active Evaluation)
+**Status:** ✅ Completed (v0.2/v0.2b Swaps & Checkpoint Report Saved)
 
 ### Difficulty Conditions (Phase 1A–D)
 1. **Phase 1A: Orthogonal associations** (Sanity check)
@@ -105,7 +105,7 @@ No phase is skipped. No mechanism is added without ablation.
 
 **Goal:** Prove reduced forgetting on sequential symbolic sequence learning.
 
-**Status:** 🔲 Planned (begins after Phase 1 success)
+**Status:** 🚧 Active (Designing Seq AGNIS benchmark harness)
 
 ### Tasks
 Train and evaluate sequentially on:
