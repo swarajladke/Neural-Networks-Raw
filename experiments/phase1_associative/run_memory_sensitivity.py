@@ -122,6 +122,7 @@ def main():
                                 "--config", args.config,
                                 "--write-threshold", str(w_thresh),
                                 "--novelty-threshold", str(n_thresh),
+                                "--sensitivity-mode",
                             ]
                             if l_dim is not None:
                                 cmd += ["--latent-dim", str(l_dim)]

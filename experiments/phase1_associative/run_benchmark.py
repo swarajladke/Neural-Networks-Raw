@@ -34,7 +34,7 @@ from agnis.evaluation.representation import (
     compute_pairwise_overlap,
     compute_interference_score,
 )
-from agnis.evaluation.phase1_logging import save_phase1_run_results
+from agnis.evaluation.phase1_logging import save_phase1_run_results, format_threshold
 from task_generators import generate_phase1_tasks, AssociationTask
 from plot_phase1 import generate_all_plots
 
@@ -72,6 +72,7 @@ def parse_args():
     parser.add_argument("--novelty-threshold", type=float, default=None, help="Overwrite write novelty threshold")
     parser.add_argument("--latent-dim", type=int, default=None, help="Overwrite model latent dimension d_z")
     parser.add_argument("--n-tasks", type=int, default=None, help="Overwrite number of tasks")
+    parser.add_argument("--sensitivity-mode", action="store_true", help="Partition results directory by thresholds")
     return parser.parse_args()
 
 
@@ -423,6 +424,8 @@ def main():
         "evaluation_mode": "no_update",
         "write_error_threshold": config.memory.write_error_threshold,
         "write_novelty_threshold": config.memory.write_novelty_threshold,
+        "sensitivity_mode": args.sensitivity_mode,
+        "run_id": f"{args.condition}_{args.model}_write_{format_threshold(config.memory.write_error_threshold)}_novelty_{format_threshold(config.memory.write_novelty_threshold)}_seed_{args.seed}",
     }
 
     # 9. Save files

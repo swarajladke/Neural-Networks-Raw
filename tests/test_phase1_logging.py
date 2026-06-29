@@ -70,3 +70,83 @@ def test_metrics_json_schema(tmp_path):
         
     for key in required_keys:
         assert key in loaded_metrics, f"Missing required metrics key: {key}"
+
+
+def test_sensitivity_threshold_paths_do_not_collide(tmp_path):
+    results_dir = str(tmp_path)
+    
+    mock_metrics_1 = {
+        "sensitivity_mode": True,
+        "write_error_threshold": 0.01,
+        "write_novelty_threshold": 0.05,
+    }
+    
+    mock_metrics_2 = {
+        "sensitivity_mode": True,
+        "write_error_threshold": 0.2,
+        "write_novelty_threshold": 0.15,
+    }
+    
+    mock_metrics_default = {
+        "sensitivity_mode": False,
+        "write_error_threshold": 0.2,
+        "write_novelty_threshold": 0.15,
+    }
+    
+    # Save first sensitivity run
+    run_dir_1 = save_phase1_run_results(
+        results_dir=results_dir,
+        condition="orthogonal",
+        model_name="agnis_replay",
+        seed=0,
+        metrics_dict=mock_metrics_1,
+        accuracy_matrix=[[1.0]],
+        forgetting_list=[0.0],
+        prediction_errors=[0.1],
+        active_fractions=[0.1],
+        memory_usages=[0],
+        overlap_matrix=[[1.0]],
+        config_data={"dummy": True},
+    )
+    
+    # Save second sensitivity run with different threshold
+    run_dir_2 = save_phase1_run_results(
+        results_dir=results_dir,
+        condition="orthogonal",
+        model_name="agnis_replay",
+        seed=0,
+        metrics_dict=mock_metrics_2,
+        accuracy_matrix=[[1.0]],
+        forgetting_list=[0.0],
+        prediction_errors=[0.1],
+        active_fractions=[0.1],
+        memory_usages=[0],
+        overlap_matrix=[[1.0]],
+        config_data={"dummy": True},
+    )
+
+    # Save default run (sensitivity_mode = False)
+    run_dir_default = save_phase1_run_results(
+        results_dir=results_dir,
+        condition="orthogonal",
+        model_name="agnis_replay",
+        seed=0,
+        metrics_dict=mock_metrics_default,
+        accuracy_matrix=[[1.0]],
+        forgetting_list=[0.0],
+        prediction_errors=[0.1],
+        active_fractions=[0.1],
+        memory_usages=[0],
+        overlap_matrix=[[1.0]],
+        config_data={"dummy": True},
+    )
+
+    # Assert paths do not collide
+    assert run_dir_1 != run_dir_2
+    assert "write_0p01_novelty_0p05" in run_dir_1
+    assert "write_0p2_novelty_0p15" in run_dir_2
+    
+    # Assert default path is backward compatible (doesn't contain write/novelty subfolders)
+    assert "write_0p2_novelty_0p15" not in run_dir_default
+    assert run_dir_default == os.path.join(results_dir, "orthogonal", "agnis_replay", "seed_0")
+

@@ -12,6 +12,10 @@ import yaml
 from typing import Dict, Any, List, Optional
 
 
+def format_threshold(value: float) -> str:
+    return f"{value:.4g}".replace(".", "p")
+
+
 def save_phase1_run_results(
     results_dir: str,
     condition: str,
@@ -62,7 +66,23 @@ def save_phase1_run_results(
         Path to the saved run folder.
     """
     # Create seed-specific directory path
-    run_dir = os.path.join(results_dir, condition, model_name, f"seed_{seed}")
+    sensitivity_mode = metrics_dict.get("sensitivity_mode", False)
+    write_thresh = metrics_dict.get("write_error_threshold", 0.2)
+    novelty_thresh = metrics_dict.get("write_novelty_threshold", 0.15)
+
+    if sensitivity_mode:
+        w_str = format_threshold(write_thresh)
+        n_str = format_threshold(novelty_thresh)
+        run_dir = os.path.join(
+            results_dir,
+            condition,
+            model_name,
+            f"write_{w_str}_novelty_{n_str}",
+            f"seed_{seed}"
+        )
+    else:
+        run_dir = os.path.join(results_dir, condition, model_name, f"seed_{seed}")
+
     os.makedirs(run_dir, exist_ok=True)
     os.makedirs(os.path.join(run_dir, "plots"), exist_ok=True)
 
