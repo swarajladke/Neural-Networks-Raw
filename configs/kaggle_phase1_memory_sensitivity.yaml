@@ -1,0 +1,47 @@
+# Kaggle Phase 1 Memory Sensitivity Configuration
+# Targeted sweeps to force and analyze memory/replay activation.
+
+experiment_name: kaggle_phase1_memory_sensitivity
+phase: 1
+results_dir: results/phase1_memory_sensitivity/
+
+model:
+  d_in: 32
+  d_z: 32            # Will be swept/overridden during capacity_stress
+  k_sparse: 4
+  n_settle: 15
+  eta_z: 0.05
+  eta_D: 0.01
+  eta_E: 0.01
+  eta_R: 0.005
+  rho: 0.3
+  lambda_lat: 0.1
+  lambda_sparse: 0.01
+  use_sparsity: true
+  use_recurrent: false
+  use_lateral: false
+  importance_decay: 0.01
+
+memory:
+  capacity: 256
+  write_error_threshold: 0.05 # Default low threshold to trigger writes
+  write_novelty_threshold: 0.05
+  importance_decay: 0.999
+  min_similarity_to_skip_write: 0.95
+  replay_buffer_size: 128
+
+training:
+  n_tasks: 3         # sweeps can override this (e.g. to 5 or 10)
+  pairs_per_task: 4
+  n_repeats_per_task: 100
+  n_sleep_steps: 2
+  n_sleep_replay: 32
+  sleep_lr_scale: 0.3
+  importance_protect_threshold: 0.5
+  eval_threshold: 0.3
+  log_every: 20
+  seed: 42
+  overlap_context: true
+
+neurogenesis:
+  enabled: false

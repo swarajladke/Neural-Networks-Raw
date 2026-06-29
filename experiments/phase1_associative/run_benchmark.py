@@ -68,6 +68,10 @@ def parse_args():
     parser.add_argument("--config", type=str, default=None, help="Path to config YAML")
     parser.add_argument("--smoke", action="store_true", help="Run a tiny local validation run")
     parser.add_argument("--dry-run", action="store_true", help="Print plan and exit without running")
+    parser.add_argument("--write-threshold", type=float, default=None, help="Overwrite write error threshold")
+    parser.add_argument("--novelty-threshold", type=float, default=None, help="Overwrite write novelty threshold")
+    parser.add_argument("--latent-dim", type=int, default=None, help="Overwrite model latent dimension d_z")
+    parser.add_argument("--n-tasks", type=int, default=None, help="Overwrite number of tasks")
     return parser.parse_args()
 
 
@@ -207,6 +211,16 @@ def main():
         config.memory.capacity = 10
         config.memory.replay_buffer_size = 5
 
+    # 2.5 Apply CLI overrides
+    if args.write_threshold is not None:
+        config.memory.write_error_threshold = args.write_threshold
+    if args.novelty_threshold is not None:
+        config.memory.write_novelty_threshold = args.novelty_threshold
+    if args.latent_dim is not None:
+        config.model.d_z = args.latent_dim
+    if args.n_tasks is not None:
+        config.training.n_tasks = args.n_tasks
+
     # 3. Handle capacity stress overrides/validation
     if args.condition == "capacity_stress":
         print("[Benchmark] Capacity Stress condition selected.")
@@ -266,8 +280,13 @@ def main():
     accuracy_matrix = []
 
     # 6. Sequential Learning Loop
+    accuracy_before_sleep = []
+    accuracy_after_sleep = []
+
     for t_idx, task in enumerate(tasks):
         print(f"[Benchmark] Training Task {t_idx}: {task.name}...")
+        if hasattr(model, "start_task"):
+            model.start_task(t_idx)
         
         # Present pairs sequentially
         n_repeats = config.training.n_repeats_per_task
@@ -291,17 +310,11 @@ def main():
                 active_fractions.append(1.0 - sparsity)
                 memory_usages.append(stats.get("memory_size", 0))
 
-        # Sleep/consolidation phase
-        if hasattr(model, "sleep"):
-            print(f"[Benchmark] Sleep consolidation after Task {t_idx}...")
-            model.sleep()
-
-        # Evaluation phase (update=False, write_memory=False is guaranteed by design)
-        print(f"[Benchmark] Evaluating task accuracies after Ckpt {t_idx}...")
-        row = []
+        # Evaluation before sleep
+        row_before = []
         for eval_idx in range(config.training.n_tasks):
             if eval_idx > t_idx:
-                row.append(None) # not trained yet
+                row_before.append(None)
             else:
                 eval_task = tasks[eval_idx]
                 acc = evaluate_model_on_task(
@@ -310,15 +323,39 @@ def main():
                     targets=eval_task.targets,
                     context=eval_task.context,
                 )
-                row.append(acc)
-        accuracy_matrix.append(row)
-        print(f"  Accuracies: {row}")
+                row_before.append(acc)
+        accuracy_before_sleep.append(row_before)
+        print(f"  Accuracies before sleep: {row_before}")
 
+        # Sleep/consolidation phase
+        if hasattr(model, "sleep"):
+            print(f"[Benchmark] Sleep consolidation after Task {t_idx}...")
+            model.sleep()
+
+        # Evaluation after sleep
+        row_after = []
+        for eval_idx in range(config.training.n_tasks):
+            if eval_idx > t_idx:
+                row_after.append(None)
+            else:
+                eval_task = tasks[eval_idx]
+                acc = evaluate_model_on_task(
+                    model=model,
+                    inputs=eval_task.inputs,
+                    targets=eval_task.targets,
+                    context=eval_task.context,
+                )
+                row_after.append(acc)
+        accuracy_after_sleep.append(row_after)
+        print(f"  Accuracies after sleep:  {row_after}")
+
+    accuracy_matrix = accuracy_after_sleep
     runtime = time.time() - start_time
 
     # 7. Post-experiment representation and metrics compilation
     print("[Benchmark] Compiling final metrics...")
     random_accuracy = 1.0 / d_out
+    cl_metrics_before = compute_phase1_metrics(accuracy_before_sleep, random_accuracy=random_accuracy)
     cl_metrics = compute_phase1_metrics(accuracy_matrix, random_accuracy=random_accuracy)
 
     # Prototypes and Overlaps
@@ -362,6 +399,18 @@ def main():
         "representation_overlap_mean": mean_overlap,
         "interference_score": interference_val,
         "runtime_seconds": runtime,
+        # New Diagnostic Metrics
+        "accuracy_before_sleep": accuracy_before_sleep,
+        "accuracy_after_sleep": accuracy_after_sleep,
+        "forgetting_before_sleep": cl_metrics_before.get("average_forgetting", 0.0),
+        "forgetting_after_sleep": cl_metrics.get("average_forgetting", 0.0),
+        "replay_benefit": cl_metrics.get("final_average_accuracy", 0.0) - cl_metrics_before.get("final_average_accuracy", 0.0),
+        "memory_writes_per_task": final_stats.get("memory_writes_per_task", []),
+        "memory_retrievals_per_task": final_stats.get("memory_retrievals_per_task", []),
+        "memory_hits_per_task": final_stats.get("memory_hits_per_task", []),
+        "mean_retrieval_similarity": final_stats.get("mean_retrieval_similarity", 0.0),
+        "replay_steps_executed": final_stats.get("replay_steps_executed", 0),
+        "replay_error_delta": final_stats.get("replay_error_delta", 0.0),
         # Metadata configuration parameters
         "uses_context": overlap_context if args.condition == "overlapping" else False,
         "input_dim": d_in,
@@ -372,6 +421,8 @@ def main():
         "train_steps_per_pair": config.training.n_repeats_per_task,
         "sleep_steps_per_task": config.training.n_sleep_steps,
         "evaluation_mode": "no_update",
+        "write_error_threshold": config.memory.write_error_threshold,
+        "write_novelty_threshold": config.memory.write_novelty_threshold,
     }
 
     # 9. Save files

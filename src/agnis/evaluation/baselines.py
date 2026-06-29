@@ -202,6 +202,9 @@ class AssociativeModel:
     def get_latent(self, x: torch.Tensor, y: Optional[torch.Tensor] = None, task_context: Optional[torch.Tensor] = None) -> torch.Tensor:
         raise NotImplementedError
 
+    def start_task(self, task_idx: int):
+        pass
+
     def get_stats(self) -> dict:
         raise NotImplementedError
 
@@ -368,6 +371,22 @@ class AgnisBaseline(AssociativeModel):
         self.memory_hits = 0
         self.last_retrieval_similarity = 0.0
 
+        # Diagnostic metrics per task
+        self.current_task_idx = 0
+        self.memory_writes_per_task = [0]
+        self.memory_retrievals_per_task = [0]
+        self.memory_hits_per_task = [0]
+        self.retrieval_similarities = []
+        self.replay_steps_executed = 0
+        self.replay_error_delta = 0.0
+
+    def start_task(self, task_idx: int):
+        self.current_task_idx = task_idx
+        while len(self.memory_writes_per_task) <= task_idx:
+            self.memory_writes_per_task.append(0)
+            self.memory_retrievals_per_task.append(0)
+            self.memory_hits_per_task.append(0)
+
     def train_pair(self, x: torch.Tensor, y: torch.Tensor, task_context: Optional[torch.Tensor] = None) -> dict:
         if task_context is not None:
             x = torch.cat([x, task_context])
@@ -383,11 +402,14 @@ class AgnisBaseline(AssociativeModel):
         # Memory write
         if self.use_memory and self.fast_mem is not None:
             self.fast_mem.tick()
-            self.fast_mem.write(
+            written = self.fast_mem.write(
                 key=a.detach().clone(),
                 value=s_joint.detach().clone(),
                 error_val=error_val,
+                task_id=self.current_task_idx,
             )
+            if written:
+                self.memory_writes_per_task[self.current_task_idx] += 1
 
         return {"error": error_val, **metrics}
 
@@ -408,13 +430,16 @@ class AgnisBaseline(AssociativeModel):
 
         # Hybrid lookup retrieval (optional validation)
         if self.use_memory and self.fast_mem is not None:
+            self.memory_retrievals_per_task[self.current_task_idx] += 1
             retrieved = self.fast_mem.retrieve(a, update_importance=False)
             self.memory_retrievals += 1
             if retrieved is not None:
                 val, sim, entry = retrieved
                 self.last_retrieval_similarity = sim
+                self.retrieval_similarities.append(sim)
                 if sim > 0.8:
                     self.memory_hits += 1
+                    self.memory_hits_per_task[self.current_task_idx] += 1
                     # Blend or override if memory retrieval is extremely strong
                     if sim > 0.95:
                         pred_target = val[self.d_in_x:]
@@ -426,6 +451,11 @@ class AgnisBaseline(AssociativeModel):
             # Populate buffer
             self.replay_buf.add_from_memory(self.fast_mem, n=self.n_sleep_replay)
             errors = self.sleep_trainer.sleep(n_replay=self.n_sleep_replay, n_steps=self.n_sleep_steps)
+            if errors:
+                start_err = errors[0]
+                end_err = errors[-1]
+                self.replay_error_delta += (start_err - end_err)
+                self.replay_steps_executed += len(errors)
             mean_error = sum(errors) / len(errors) if errors else 0.0
             return {"sleep_mean_error": mean_error, "sleep_steps": len(errors)}
         return {}
@@ -448,10 +478,16 @@ class AgnisBaseline(AssociativeModel):
         stats = {
             "sparsity_level": self.cell.sparsity_level,
             "prediction_error": self.cell.prediction_error,
+            "memory_size": self.fast_mem.size if self.fast_mem is not None else 0,
+            "memory_writes_per_task": self.memory_writes_per_task,
+            "memory_retrievals_per_task": self.memory_retrievals_per_task,
+            "memory_hits_per_task": self.memory_hits_per_task,
+            "mean_retrieval_similarity": sum(self.retrieval_similarities) / len(self.retrieval_similarities) if self.retrieval_similarities else 0.0,
+            "replay_steps_executed": self.replay_steps_executed,
+            "replay_error_delta": self.replay_error_delta,
         }
         if self.use_memory and self.fast_mem is not None:
             stats.update({
-                "memory_size": self.fast_mem.size,
                 "memory_utilization": self.fast_mem.utilization,
                 "memory_hits": self.memory_hits,
                 "memory_retrievals": self.memory_retrievals,
