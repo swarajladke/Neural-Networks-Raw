@@ -90,6 +90,9 @@ class PredictiveCell(nn.Module):
         use_recurrent: bool = False,
         use_lateral: bool = False,
         importance_decay: float = 0.01,
+        R_update_enabled: bool = True,
+        R_drive_enabled: bool = True,
+        spectral_radius_max: float = 1.0,
     ):
         super().__init__()
 
@@ -108,6 +111,9 @@ class PredictiveCell(nn.Module):
         self.use_recurrent = use_recurrent
         self.use_lateral = use_lateral
         self.importance_decay = importance_decay
+        self.R_update_enabled = R_update_enabled
+        self.R_drive_enabled = R_drive_enabled
+        self.spectral_radius_max = spectral_radius_max
 
         # ── Weight matrices (not nn.Parameters — we update manually) ──────────
         # Generative: D (d_in x d_z) — decodes latent to input space
@@ -139,6 +145,8 @@ class PredictiveCell(nn.Module):
         self.z_prev = torch.zeros(d_z)
 
         # ── Metrics ───────────────────────────────────────────────────────────
+        self.recurrent_drive_norms = []
+        self.R_update_norms = []
         self._last_error: Optional[torch.Tensor] = None
         self._last_sparsity: float = 0.0
         self._last_pred: Optional[torch.Tensor] = None
@@ -208,8 +216,12 @@ class PredictiveCell(nn.Module):
             d_fb = (self.D.T @ e) * self.activation_deriv(z)  # feedback drive
 
             d_time = torch.zeros(self.d_z)
-            if self.use_recurrent:
-                d_time = self.R @ z_prev
+            if self.use_recurrent and self.R_drive_enabled:
+                a_prev = self.activation(z_prev)
+                if self.use_sparsity:
+                    a_prev = kwta(a_prev, self.k_sparse)
+                d_time = self.R @ a_prev
+                self.recurrent_drive_norms.append(d_time.norm().item())
 
             d_lat = torch.zeros(self.d_z)
             if self.use_lateral:
@@ -276,11 +288,20 @@ class PredictiveCell(nn.Module):
         delta_E = hebbian_recognition_update(z, self.E, s, self.eta_E)
         self.E = self.E + delta_E
 
-        # Recurrent update: ΔR = η_R * outer(z, z_prev)
+        # Recurrent update
         delta_R = torch.zeros_like(self.R)
-        if self.use_recurrent:
-            delta_R = hebbian_recurrent_update(z, z_prev, self.eta_R)
+        if self.use_recurrent and self.R_update_enabled:
+            # error-driven local recurrent learning: ΔR = η_R * outer(z - R @ a_prev, a_prev)
+            a_prev = self.activation(z_prev.detach())
+            if self.use_sparsity:
+                a_prev = kwta(a_prev, self.k_sparse)
+            z_target = z.detach()
+            z_pred = self.R @ a_prev
+            r_error = z_target - z_pred
+            delta_R = self.eta_R * torch.outer(r_error, a_prev)
             self.R = self.R + delta_R
+            self.normalize_R()
+            self.R_update_norms.append(delta_R.norm().item())
 
         # Update importance
         self.importance_D = update_importance(
@@ -295,6 +316,12 @@ class PredictiveCell(nn.Module):
             "delta_E_norm": delta_E.norm().item(),
             "delta_R_norm": delta_R.norm().item(),
         }
+
+    def normalize_R(self):
+        """Clamp/normalize R to maintain spectral stability."""
+        R_norm = torch.linalg.matrix_norm(self.R, ord=2)
+        if R_norm > self.spectral_radius_max:
+            self.R = self.R * (self.spectral_radius_max / (R_norm + 1e-8))
 
     @property
     def prediction_error(self) -> Optional[float]:
@@ -312,6 +339,8 @@ class PredictiveCell(nn.Module):
         """Reset recurrent/temporal state (call between unrelated sequences)."""
         self.z = torch.zeros(self.d_z)
         self.z_prev = torch.zeros(self.d_z)
+        self.recurrent_drive_norms.clear()
+        self.R_update_norms.clear()
 
     def get_config(self) -> dict:
         """Return configuration dictionary for logging/reproducibility."""

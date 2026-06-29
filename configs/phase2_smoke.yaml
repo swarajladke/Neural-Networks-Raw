@@ -1,0 +1,48 @@
+# Phase 2 Smoke Configuration (Local validation only)
+experiment_name: phase2_smoke
+phase: 2
+results_dir: results/phase2/
+
+model:
+  d_in: 8            # vocab size
+  d_z: 8
+  k_sparse: 2
+  n_settle: 5
+  eta_z: 0.05
+  eta_D: 0.01
+  eta_E: 0.01
+  eta_R: 0.005
+  rho: 0.3
+  lambda_lat: 0.1
+  lambda_sparse: 0.01
+  use_sparsity: true
+  use_recurrent: true
+  use_lateral: false
+  importance_decay: 0.01
+
+memory:
+  capacity: 10
+  write_error_threshold: 0.05
+  write_novelty_threshold: 0.05
+  importance_decay: 0.999
+  min_similarity_to_skip_write: 0.95
+  replay_buffer_size: 5
+
+training:
+  n_tasks: 2
+  sequences_per_task: 2
+  sequence_length: 6
+  epochs_per_task: 1
+  n_repeats_per_task: 1
+  n_sleep_steps: 1
+  n_sleep_replay: 2
+  sleep_lr_scale: 0.3
+  importance_protect_threshold: 0.5
+  eval_threshold: 0.3
+  log_every: 20
+  seed: 42
+  overlap_context: false
+  sensitivity_mode: false
+
+neurogenesis:
+  enabled: false

@@ -1,0 +1,144 @@
+"""
+Raw AGNIS — experiments/phase2_sequences/run_sequence_sweep.py
+
+Sweep runner script to coordinate multi-seed, multi-model, multi-condition runs for Phase 2.
+"""
+
+import sys
+import os
+import argparse
+import subprocess
+from typing import List
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Raw AGNIS Phase 2 Sequence Sweep Runner")
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="configs/kaggle_phase2.yaml",
+        help="Path to configuration YAML file",
+    )
+    parser.add_argument(
+        "--conditions",
+        type=str,
+        nargs="+",
+        default=["periodic", "doublet", "copy", "palindrome"],
+        help="Conditions to sweep",
+    )
+    parser.add_argument(
+        "--models",
+        type=str,
+        nargs="+",
+        default=[
+            "mlp_context_window",
+            "simple_rnn",
+            "seq_agnis_no_recurrent",
+            "seq_agnis_recurrent",
+            "seq_agnis_recurrent_kwta",
+            "seq_agnis_recurrent_memory",
+            "seq_agnis_recurrent_replay",
+            "seq_agnis_full_fixed",
+        ],
+        help="Models to sweep",
+    )
+    parser.add_argument(
+        "--seeds",
+        type=int,
+        nargs="+",
+        default=list(range(10)),
+        help="Seeds to sweep",
+    )
+    parser.add_argument(
+        "--write-thresholds",
+        type=float,
+        nargs="+",
+        default=None,
+        help="Optional write thresholds to sweep (triggers sensitivity mode)",
+    )
+    parser.add_argument(
+        "--novelty-thresholds",
+        type=float,
+        nargs="+",
+        default=None,
+        help="Optional novelty thresholds to sweep (triggers sensitivity mode)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print execution plan without running",
+    )
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    benchmark_script = os.path.join(
+        os.path.dirname(__file__), "run_sequence_benchmark.py"
+    )
+
+    # Resolve sweeps thresholds
+    w_thresholds = args.write_thresholds if args.write_thresholds else [None]
+    n_thresholds = args.novelty_thresholds if args.novelty_thresholds else [None]
+
+    total_runs = (
+        len(args.conditions)
+        * len(args.models)
+        * len(args.seeds)
+        * len(w_thresholds)
+        * len(n_thresholds)
+    )
+
+    print(f"\n================ Phase 2 Sequence Sweep Plan ================")
+    print(f"Config: {args.config}")
+    print(f"Conditions: {args.conditions}")
+    print(f"Models: {args.models}")
+    print(f"Seeds: {args.seeds}")
+    if args.write_thresholds:
+        print(f"Write Thresholds: {args.write_thresholds}")
+        print(f"Novelty Thresholds: {args.novelty_thresholds}")
+        print("Sensitivity Mode: ACTIVE")
+    print(f"Total planned runs: {total_runs}")
+    print(f"===============================================================\n")
+
+    run_count = 0
+    for condition in args.conditions:
+        for model in args.models:
+            for seed in args.seeds:
+                for w_t in w_thresholds:
+                    for n_t in n_thresholds:
+                        run_count += 1
+                        cmd = [
+                            sys.executable,
+                            benchmark_script,
+                            "--condition", condition,
+                            "--model", model,
+                            "--seed", str(seed),
+                            "--config", args.config,
+                        ]
+                        
+                        if w_t is not None:
+                            cmd += ["--write-threshold", str(w_t)]
+                        if n_t is not None:
+                            cmd += ["--novelty-threshold", str(n_t)]
+                        if args.write_thresholds is not None:
+                            cmd.append("--sensitivity-mode")
+
+                        if args.dry_run:
+                            cmd.append("--dry-run")
+
+                        print(f"[{run_count}/{total_runs}] Running: {' '.join(cmd)}")
+
+                        if not args.dry_run:
+                            try:
+                                subprocess.run(cmd, check=True)
+                            except subprocess.CalledProcessError as e:
+                                print(f"[Sweep] Error on run {run_count}: {e}")
+                                print("[Sweep] Continuing sweep...")
+
+    print(f"\n[Sweep] Completed Phase 2 sequence sweep. Total attempted runs: {run_count}\n")
+
+
+if __name__ == "__main__":
+    main()

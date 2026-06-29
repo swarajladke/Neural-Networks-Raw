@@ -1,0 +1,50 @@
+# Kaggle Phase 2 Sweep Configuration
+# WARNING: Do not run this full sweep configuration locally! Intended ONLY for Kaggle.
+
+experiment_name: kaggle_phase2
+phase: 2
+results_dir: results/phase2/
+
+model:
+  d_in: 32           # Max vocab size (adjusted at runtime: num_tasks * vocab_size_per_task)
+  d_z: 32
+  k_sparse: 4
+  n_settle: 15
+  eta_z: 0.05
+  eta_D: 0.01
+  eta_E: 0.01
+  eta_R: 0.005
+  rho: 0.5
+  lambda_lat: 0.1
+  lambda_sparse: 0.01
+  use_sparsity: true
+  use_recurrent: true
+  use_lateral: false
+  importance_decay: 0.01
+
+memory:
+  capacity: 256
+  write_error_threshold: 0.05
+  write_novelty_threshold: 0.05
+  importance_decay: 0.999
+  min_similarity_to_skip_write: 0.95
+  replay_buffer_size: 128
+
+training:
+  n_tasks: 3
+  sequences_per_task: 16
+  sequence_length: 24
+  epochs_per_task: 10
+  n_repeats_per_task: 10      # epochs per task is split into multiple repeats or training rounds
+  n_sleep_steps: 2
+  n_sleep_replay: 20
+  sleep_lr_scale: 0.3
+  importance_protect_threshold: 0.5
+  eval_threshold: 0.3
+  log_every: 20
+  seed: 42
+  overlap_context: false
+  sensitivity_mode: false
+
+neurogenesis:
+  enabled: false

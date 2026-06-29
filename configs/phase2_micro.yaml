@@ -1,0 +1,48 @@
+# Phase 2 Micro Configuration (Local debugging)
+experiment_name: phase2_micro
+phase: 2
+results_dir: results/phase2/
+
+model:
+  d_in: 16
+  d_z: 16
+  k_sparse: 4
+  n_settle: 10
+  eta_z: 0.05
+  eta_D: 0.01
+  eta_E: 0.01
+  eta_R: 0.005
+  rho: 0.5
+  lambda_lat: 0.1
+  lambda_sparse: 0.01
+  use_sparsity: true
+  use_recurrent: true
+  use_lateral: false
+  importance_decay: 0.01
+
+memory:
+  capacity: 64
+  write_error_threshold: 0.05
+  write_novelty_threshold: 0.05
+  importance_decay: 0.999
+  min_similarity_to_skip_write: 0.95
+  replay_buffer_size: 32
+
+training:
+  n_tasks: 3
+  sequences_per_task: 4
+  sequence_length: 12
+  epochs_per_task: 3
+  n_repeats_per_task: 3
+  n_sleep_steps: 2
+  n_sleep_replay: 8
+  sleep_lr_scale: 0.3
+  importance_protect_threshold: 0.5
+  eval_threshold: 0.3
+  log_every: 20
+  seed: 42
+  overlap_context: false
+  sensitivity_mode: false
+
+neurogenesis:
+  enabled: false

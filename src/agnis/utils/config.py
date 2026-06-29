@@ -56,6 +56,13 @@ class TrainingConfig:
     log_every: int = 10
     seed: int = 42
     overlap_context: bool = True
+    sequences_per_task: int = 16
+    sequence_length: int = 24
+    epochs_per_task: int = 50
+    sensitivity_mode: bool = False
+
+
+
 
 
 @dataclass
