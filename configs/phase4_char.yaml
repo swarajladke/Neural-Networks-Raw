@@ -1,0 +1,57 @@
+# Phase 4 — Character Language Configuration
+experiment_name: phase4_char
+phase: 4
+results_dir: results/phase4/
+
+model:
+  d_in: 128           # character-level (printable ASCII range)
+  d_z: 128
+  k_sparse: 13        # ~10% sparsity
+  n_settle: 15
+  eta_z: 0.03
+  eta_D: 0.005
+  eta_E: 0.005
+  eta_R: 0.003
+  rho: 0.5
+  lambda_lat: 0.1
+  lambda_sparse: 0.01
+  use_sparsity: true
+  use_recurrent: true
+  use_lateral: false
+  importance_decay: 0.005
+
+memory:
+  capacity: 512
+  write_error_threshold: 0.15
+  write_novelty_threshold: 0.10
+  importance_decay: 0.999
+  min_similarity_to_skip_write: 0.95
+  replay_buffer_size: 256
+
+training:
+  n_tasks: 4          # 4 text domains
+  n_repeats_per_task: 200
+  n_sleep_steps: 3
+  n_sleep_replay: 64
+  sleep_lr_scale: 0.2
+  importance_protect_threshold: 0.6
+  eval_threshold: 0.2
+  log_every: 50
+  seed: 42
+
+neurogenesis:
+  enabled: true
+  alpha: 1.0
+  beta: 0.5
+  gamma: 0.3
+  delta: 0.4
+  kappa: 0.3
+  lambda_cost: 0.2
+  threshold: 0.6
+  consecutive_n: 20
+  max_units: 256
+  prune_interval: 500
+  usage_threshold: 0.05
+  importance_threshold: 0.01
+  redundancy_threshold: 0.90
+  maturity_floor: 0.05

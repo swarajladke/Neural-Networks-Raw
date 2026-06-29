@@ -1,0 +1,43 @@
+# Phase 2 — Sequence Learning Configuration
+experiment_name: phase2_seq
+phase: 2
+results_dir: results/phase2/
+
+model:
+  d_in: 8            # sequence symbol vocab (small symbolic alphabet)
+  d_z: 64
+  k_sparse: 6        # ~9% sparsity
+  n_settle: 15
+  eta_z: 0.05
+  eta_D: 0.01
+  eta_E: 0.01
+  eta_R: 0.005
+  rho: 0.4           # stronger recurrent drive for sequence tasks
+  lambda_lat: 0.1
+  lambda_sparse: 0.01
+  use_sparsity: true
+  use_recurrent: true  # enabled for Phase 2
+  use_lateral: false
+  importance_decay: 0.01
+
+memory:
+  capacity: 256
+  write_error_threshold: 0.2
+  write_novelty_threshold: 0.15
+  importance_decay: 0.999
+  min_similarity_to_skip_write: 0.95
+  replay_buffer_size: 128
+
+training:
+  n_tasks: 6         # 6 sequence families
+  n_repeats_per_task: 100
+  n_sleep_steps: 2
+  n_sleep_replay: 32
+  sleep_lr_scale: 0.3
+  importance_protect_threshold: 0.5
+  eval_threshold: 0.3
+  log_every: 20
+  seed: 42
+
+neurogenesis:
+  enabled: false

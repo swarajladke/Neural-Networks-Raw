@@ -1,0 +1,47 @@
+# Phase 1 Smoke Configuration
+# Safe for extremely fast local validation / pytest smoke runs.
+
+experiment_name: phase1_smoke
+phase: 1
+results_dir: results/phase1/
+
+model:
+  d_in: 12
+  d_z: 8             # tiny bottleneck
+  k_sparse: 2
+  n_settle: 3        # very few steps
+  eta_z: 0.05
+  eta_D: 0.01
+  eta_E: 0.01
+  eta_R: 0.005
+  rho: 0.3
+  lambda_lat: 0.1
+  lambda_sparse: 0.01
+  use_sparsity: true
+  use_recurrent: false
+  use_lateral: false
+  importance_decay: 0.01
+
+memory:
+  capacity: 10       # small memory
+  write_error_threshold: 0.1
+  write_novelty_threshold: 0.05
+  importance_decay: 0.99
+  min_similarity_to_skip_write: 0.9
+  replay_buffer_size: 5
+
+training:
+  n_tasks: 3
+  pairs_per_task: 2
+  n_repeats_per_task: 2 # tiny repetition
+  n_sleep_steps: 1
+  n_sleep_replay: 2
+  sleep_lr_scale: 0.3
+  importance_protect_threshold: 0.5
+  eval_threshold: 0.3
+  log_every: 1
+  seed: 42
+  overlap_context: true
+
+neurogenesis:
+  enabled: false

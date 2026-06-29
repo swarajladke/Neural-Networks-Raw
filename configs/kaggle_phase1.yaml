@@ -1,0 +1,47 @@
+# Kaggle Phase 1 Configuration
+# Full benchmark sweeps. NOT intended for local long execution; run on Kaggle.
+
+experiment_name: kaggle_phase1
+phase: 1
+results_dir: results/phase1/
+
+model:
+  d_in: 32
+  d_z: 32            # 32 for orthogonal/overlapping/clustered, overriden to 4 during capacity_stress
+  k_sparse: 4        # ~12% sparsity
+  n_settle: 15       # higher settling iterations for convergence
+  eta_z: 0.05
+  eta_D: 0.01
+  eta_E: 0.01
+  eta_R: 0.005
+  rho: 0.3
+  lambda_lat: 0.1
+  lambda_sparse: 0.01
+  use_sparsity: true
+  use_recurrent: false
+  use_lateral: false
+  importance_decay: 0.01
+
+memory:
+  capacity: 256
+  write_error_threshold: 0.2
+  write_novelty_threshold: 0.15
+  importance_decay: 0.999
+  min_similarity_to_skip_write: 0.95
+  replay_buffer_size: 128
+
+training:
+  n_tasks: 3         # 3 tasks for standard conditions, overriden to 5 during capacity_stress
+  pairs_per_task: 4  # 4 pairs for standard, overriden to 4 during capacity_stress
+  n_repeats_per_task: 100 # full training epoch repeats
+  n_sleep_steps: 2   # dual replay steps
+  n_sleep_replay: 32
+  sleep_lr_scale: 0.3
+  importance_protect_threshold: 0.5
+  eval_threshold: 0.3
+  log_every: 20
+  seed: 42
+  overlap_context: true
+
+neurogenesis:
+  enabled: false

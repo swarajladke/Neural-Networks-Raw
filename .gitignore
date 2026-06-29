@@ -1,0 +1,41 @@
+# Raw AGNIS .gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+
+# Results (keep gitkeep, ignore actual outputs)
+results/**/*
+!results/.gitkeep
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# macOS
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+*.jsonl
+
+# Model weights (if saving checkpoints)
+*.pt
+*.pth
+*.ckpt

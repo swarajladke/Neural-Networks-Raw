@@ -1,0 +1,57 @@
+# Phase 3 — Neurogenesis Configuration
+experiment_name: phase3_neurogenesis
+phase: 3
+results_dir: results/phase3/
+
+model:
+  d_in: 12
+  d_z: 32            # starts small — grows via neurogenesis
+  k_sparse: 3
+  n_settle: 10
+  eta_z: 0.05
+  eta_D: 0.01
+  eta_E: 0.01
+  eta_R: 0.005
+  rho: 0.3
+  lambda_lat: 0.1
+  lambda_sparse: 0.01
+  use_sparsity: true
+  use_recurrent: true
+  use_lateral: false
+  importance_decay: 0.01
+
+memory:
+  capacity: 256
+  write_error_threshold: 0.2
+  write_novelty_threshold: 0.15
+  importance_decay: 0.999
+  min_similarity_to_skip_write: 0.95
+  replay_buffer_size: 128
+
+training:
+  n_tasks: 3
+  n_repeats_per_task: 50
+  n_sleep_steps: 1
+  n_sleep_replay: 32
+  sleep_lr_scale: 0.3
+  importance_protect_threshold: 0.5
+  eval_threshold: 0.3
+  log_every: 10
+  seed: 42
+
+neurogenesis:
+  enabled: true
+  alpha: 1.0
+  beta: 0.5
+  gamma: 0.3
+  delta: 0.4
+  kappa: 0.3
+  lambda_cost: 0.2
+  threshold: 0.6
+  consecutive_n: 10
+  max_units: 128      # max capacity with growth
+  prune_interval: 100
+  usage_threshold: 0.05
+  importance_threshold: 0.01
+  redundancy_threshold: 0.90
+  maturity_floor: 0.05

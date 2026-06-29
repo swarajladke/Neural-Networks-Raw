@@ -1,0 +1,47 @@
+# Phase 1 Micro Configuration
+# Medium settings for local debugging. Do NOT run multi-seed sweeps locally with this.
+
+experiment_name: phase1_micro
+phase: 1
+results_dir: results/phase1/
+
+model:
+  d_in: 24
+  d_z: 32
+  k_sparse: 3
+  n_settle: 10
+  eta_z: 0.05
+  eta_D: 0.01
+  eta_E: 0.01
+  eta_R: 0.005
+  rho: 0.3
+  lambda_lat: 0.1
+  lambda_sparse: 0.01
+  use_sparsity: true
+  use_recurrent: false
+  use_lateral: false
+  importance_decay: 0.01
+
+memory:
+  capacity: 64
+  write_error_threshold: 0.2
+  write_novelty_threshold: 0.15
+  importance_decay: 0.999
+  min_similarity_to_skip_write: 0.95
+  replay_buffer_size: 32
+
+training:
+  n_tasks: 3
+  pairs_per_task: 4
+  n_repeats_per_task: 20
+  n_sleep_steps: 1
+  n_sleep_replay: 8
+  sleep_lr_scale: 0.3
+  importance_protect_threshold: 0.5
+  eval_threshold: 0.3
+  log_every: 5
+  seed: 42
+  overlap_context: true
+
+neurogenesis:
+  enabled: false
