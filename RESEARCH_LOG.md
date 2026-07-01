@@ -99,3 +99,20 @@ Copy this block for each new entry:
 **Interpretation:** Sparsity (kWTA) is essential to shield recurrent temporal models from interference across task shifts. Fixed latent capacity restricts temporal mapping organization, directly motivating autonomous neurogenesis as a mechanism to dynamically allocate units for new sequence contexts.  
 **Next Action:** Proceed to Phase 3: Autonomous Neurogenesis. Design growth trigger mechanics, maturity gates, and representation pruning rules.
 
+---
+
+## [2026-07-01] — v0.4b Autonomous Neurogenesis Calibration & Verification
+
+**Phase:** Phase 3 — Autonomous Neurogenesis  
+**Hypothesis:** Converting the prediction error from raw MSE to L2 error norm aligns the growth trigger score with the scale of the threshold, enabling the network to autonomously spawn new units when capacity stress is high and stop spawning once error is resolved.  
+**Experiment:** 
+- Analyzed first Phase 3 Kaggle sweep results.
+- Identified that birth events were 0.0 because the raw MSE (~0.06) did not exceed the capacity-subtracted threshold of 0.35.
+- Recalibrated error metric to L2 norm: $\sqrt{\text{MSE} \cdot d_{in}}$, raising active error signals to ~1.20.
+- Implemented L2 norm updates in `run_neurogenesis_benchmark.py`.
+- Ran local validation smoke tests to verify capacity expansion.
+**Result:** 100 unit tests passing successfully. The smoke test verified that the model autonomously spawned units (capacity grew from 8 -> 10 -> 12 -> 14) during early training phases and stabilized as task error decreased.
+**Interpretation:** Calibrating growth score inputs against dimension-invariant L2 error norms is essential for stable, predictable neuroplastic growth.
+**Next Action:** Rerun the Phase 3 Kaggle sweeps with the calibrated L2 norm triggers.
+
+
