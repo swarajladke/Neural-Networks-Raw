@@ -81,3 +81,21 @@ Copy this block for each new entry:
 **Failure Notes:** Identified a directory overwrite bug in the Kaggle sweep where different thresholds saved to the same seed directory, keeping only the final configuration (Threshold 0.01). Fixed the bug by adding `--sensitivity-mode` path partitioning (e.g. `write_0p01_novelty_0p05`).  
 **Interpretation:** Sleep replay is a mathematically proven mechanism for weight consolidation in sparse predictive networks. Bottleneck constraints under capacity stress show that fixed latent structures cannot integrate arbitrary memories, proving that neurogenesis is required when saturation occurs.  
 **Next Action:** Proceed to Phase 2 Sequence learning: design the Seq AGNIS benchmark harness.
+
+---
+
+## [2026-07-01] — v0.3 Continual Sequence Prediction (Seq AGNIS)
+
+**Phase:** Phase 2 — Continual Sequence Prediction  
+**Hypothesis:** Adding a recurrent temporal transition matrix $R$ to PredictiveCell allows Raw AGNIS to predict repeating symbolic sequences and retain old sequence families, while kWTA sparsity prevents recurrent representations from interfering under task shifts.  
+**Experiment:** 
+- Implemented sequence generators for periodic, doublet, copy, and palindrome tasks.
+- Created `SeqAgnisModel`, `SimpleRNNBaseline`, and `MLPWindowBaseline` wrappers.
+- Created `run_sequence_benchmark.py` and `run_sequence_sweep.py` tools.
+- Ran multi-seed sweeps (10 seeds) across all 4 tasks and 8 model variants on Kaggle.
+- Compiled aggregated performance tables and consistency metrics.
+**Result:** 95 unit tests passing locally. On the periodic task, `seq_agnis_no_recurrent` achieved **99.7%** accuracy and **0.4%** forgetting. Enabling recurrence without sparsity (`seq_agnis_recurrent`) degraded accuracy to **68.3%** and raised forgetting to **47.4%**, but adding kWTA sparsity (`seq_agnis_recurrent_kwta`) restored accuracy to **81.7%** and forgetting to **10.2%**, validating the need for sparse recurrent drives.
+**Failure Notes:** On doublet, copy, and palindrome tasks, recurrent models did not surpass the memoryless baseline (`seq_agnis_no_recurrent` got 48.1% on doublet, which is the theoretical limit of a zero-memory model). This indicates that Hebbian recurrent updates to $R$ collapse due to representation overlap inside the fixed 32-dimensional latent space.  
+**Interpretation:** Sparsity (kWTA) is essential to shield recurrent temporal models from interference across task shifts. Fixed latent capacity restricts temporal mapping organization, directly motivating autonomous neurogenesis as a mechanism to dynamically allocate units for new sequence contexts.  
+**Next Action:** Proceed to Phase 3: Autonomous Neurogenesis. Design growth trigger mechanics, maturity gates, and representation pruning rules.
+
