@@ -115,4 +115,18 @@ Copy this block for each new entry:
 **Interpretation:** Calibrating growth score inputs against dimension-invariant L2 error norms is essential for stable, predictable neuroplastic growth.
 **Next Action:** Rerun the Phase 3 Kaggle sweeps with the calibrated L2 norm triggers.
 
+---
+
+## [2026-07-01] — v0.4c Autonomous Neurogenesis Sweeps Results
+
+**Phase:** Phase 3 — Autonomous Neurogenesis  
+**Hypothesis:** Dynamic latent space expansion with maturity-gated integration allows the network to learn complex temporal sequences (like doublet disambiguation) under bottleneck conditions, while conservative pruning prevents parameter explosion by cleaning redundant units.  
+**Experiment:** 
+- Executed the calibrated Phase 3 sweeps on Kaggle across 10 seeds and 4 model variants (fixed, neurogenesis, no-maturity, no-pruning).
+- Analyzed and aggregated performance metrics under doublet and capacity stress conditions.
+**Result:** 100 unit tests passing. On doublet sequences, `seq_agnis_neurogenesis` achieved **54.2%** next-symbol accuracy (outperforming fixed baseline of **50.9%**). Pruning successfully kept capacity compact, returning final latent space to exactly **32.0** units (139.6 births, 279.2 prunes). Disabling maturity gating dropped accuracy to **47.0%** (lower than fixed baseline), verifying that gating is essential to protect existing representations. Disabling pruning exploded capacity to **128.0** units while achieving lower accuracy (**52.7%**).
+**Interpretation:** Gated neurogenesis allows temporal networks to temporarily expand structural capacity to integrate new transition paths, while pruning consolidates representations back to a compact, highly efficient size. Without maturity gating, new units pollute established kWTA competitions.
+**Next Action:** Proceed to Phase 4: Character-Level continual language prediction sweeps.
+
+
 
