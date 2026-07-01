@@ -1,8 +1,8 @@
 # Raw AGNIS — Autonomous Generative Neuroplastic Intelligence System
 
-> **Status:** Phase 2 — Seq AGNIS Continual Sequence Prediction  
-> **Last Updated:** 2026-06-29  
-> **Research Phase:** Active benchmark design and implementation
+> **Status:** Phase 3 — Raw AGNIS Neurogenesis Autonomous Structural Growth  
+> **Last Updated:** 2026-07-01  
+> **Research Phase:** Active growth triggers and pruning mechanics design
 
 ---
 
@@ -79,8 +79,8 @@ This project is entirely **separate** from the Neural-Networks project (Hybrid A
 |---|---|---|---|
 | 0 | Setup | Repository, docs, structure | ✅ Complete |
 | 1 | Micro | Continual associative memory | ✅ Complete |
-| 2 | Seq | Continual sequence prediction | 🚧 Active |
-| 3 | Neurogenesis | Autonomous structural growth | 🔲 Planned |
+| 2 | Seq | Continual sequence prediction | ✅ Complete |
+| 3 | Neurogenesis | Autonomous structural growth | 🚧 Active |
 | 4 | Char | Character-level continual language | 🔲 Planned |
 | 5 | TinyStories | Small-scale generative test | 🔲 Conditional |
 

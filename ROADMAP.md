@@ -11,8 +11,8 @@
 ```
 Phase 0: Project Setup          [Complete]
 Phase 1: Associative Memory     [Complete]
-Phase 2: Sequence Learning      [Active]
-Phase 3: Neurogenesis           [Planned]
+Phase 2: Sequence Learning      [Complete]
+Phase 3: Neurogenesis           [Active]
 Phase 4: Character Language     [Planned]
 Phase 5: TinyStories Mini       [Conditional]
 ```
@@ -105,7 +105,7 @@ No phase is skipped. No mechanism is added without ablation.
 
 **Goal:** Prove reduced forgetting on sequential symbolic sequence learning.
 
-**Status:** 🚧 Active (Designing Seq AGNIS benchmark harness)
+**Status:** ✅ Completed (v0.3 Sequence sweeps completed & results analyzed)
 
 ### Tasks
 Train and evaluate sequentially on:
@@ -147,7 +147,7 @@ Train and evaluate sequentially on:
 
 **Goal:** Demonstrate that autonomous unit birth reduces persistent prediction error and improves continual learning without uncontrolled growth.
 
-**Status:** 🔲 Planned (begins after Phase 2 success)
+**Status:** 🚧 Active (Designing growth trigger and pruning mechanics)
 
 ### Growth Score
 
