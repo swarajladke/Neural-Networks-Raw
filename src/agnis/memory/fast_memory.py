@@ -109,6 +109,15 @@ class FastMemory:
         self, query: torch.Tensor, key: torch.Tensor, eps: float = 1e-8
     ) -> float:
         """Cosine similarity between two vectors."""
+        if query.shape[0] != key.shape[0]:
+            target_len = max(query.shape[0], key.shape[0])
+            if query.shape[0] < target_len:
+                pad = torch.zeros(target_len - query.shape[0], device=query.device)
+                query = torch.cat([query, pad], dim=0)
+            if key.shape[0] < target_len:
+                pad = torch.zeros(target_len - key.shape[0], device=key.device)
+                key = torch.cat([key, pad], dim=0)
+
         q_norm = query.norm().item()
         k_norm = key.norm().item()
         if q_norm < eps or k_norm < eps:

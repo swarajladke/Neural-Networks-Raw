@@ -93,6 +93,9 @@ class PredictiveCell(nn.Module):
         R_update_enabled: bool = True,
         R_drive_enabled: bool = True,
         spectral_radius_max: float = 1.0,
+        eta_m: float = 0.1,
+        max_latent_dim: int = 128,
+        maturity_enabled: bool = True,
     ):
         super().__init__()
 
@@ -114,6 +117,15 @@ class PredictiveCell(nn.Module):
         self.R_update_enabled = R_update_enabled
         self.R_drive_enabled = R_drive_enabled
         self.spectral_radius_max = spectral_radius_max
+        self.eta_m = eta_m
+        self.max_latent_dim = max_latent_dim
+        self.maturity_enabled = maturity_enabled
+
+        # Neurogenesis state trackers
+        self.maturity = torch.ones(d_z)
+        self.plasticity = torch.ones(d_z)
+        self.usage = torch.zeros(d_z)
+        self.age = torch.zeros(d_z)
 
         # ── Weight matrices (not nn.Parameters — we update manually) ──────────
         # Generative: D (d_in x d_z) — decodes latent to input space
@@ -197,7 +209,7 @@ class PredictiveCell(nn.Module):
         z = self.z.clone()
 
         for _ in range(self.n_settle):
-            a = self.activation(z)
+            a = self.maturity * self.activation(z)
 
             # Apply kWTA during settling if sparsity is enabled
             if self.use_sparsity:
@@ -217,7 +229,7 @@ class PredictiveCell(nn.Module):
 
             d_time = torch.zeros(self.d_z)
             if self.use_recurrent and self.R_drive_enabled:
-                a_prev = self.activation(z_prev)
+                a_prev = self.maturity * self.activation(z_prev)
                 if self.use_sparsity:
                     a_prev = kwta(a_prev, self.k_sparse)
                 d_time = self.R @ a_prev
@@ -241,7 +253,7 @@ class PredictiveCell(nn.Module):
             z = torch.clamp(z, -10.0, 10.0)
 
         # Final activation after settling
-        a = self.activation(z)
+        a = self.maturity * self.activation(z)
         if self.use_sparsity:
             a = kwta(a, self.k_sparse)
 
@@ -255,6 +267,7 @@ class PredictiveCell(nn.Module):
         self.z_prev = self.z.clone()
         self.z = z.clone()
         self._last_error = e.clone()
+        self._last_mask = observed_mask.clone() if observed_mask is not None else None
         self._last_pred = s_hat.clone()
         self._last_sparsity = compute_sparsity_level(a)
 
@@ -303,13 +316,36 @@ class PredictiveCell(nn.Module):
             self.normalize_R()
             self.R_update_norms.append(delta_R.norm().item())
 
+        # Compute error before and after update to calculate maturity update
+        err_before = e.norm().item()
+        s_hat_after = self.D @ a
+        e_after = s - s_hat_after
+        if self._last_mask is not None:
+            e_after = e_after * self._last_mask
+        err_after = e_after.norm().item()
+
+        delta_err = max(0.0, err_before - err_after)
+
+        # Update maturity vector
+        if self.maturity_enabled:
+            self.maturity = torch.clamp(self.maturity + self.eta_m * delta_err * a, 0.0, 1.0)
+
+        # Track usage and age
+        self.age = self.age + 1.0
+        self.usage = 0.99 * self.usage + 0.01 * a
+
         # Update importance
+        from agnis.core.hebbian_rules import update_importance
         self.importance_D = update_importance(
             self.importance_D, delta_D, self.importance_decay
         )
         self.importance_E = update_importance(
             self.importance_E, delta_E, self.importance_decay
         )
+        if self.use_recurrent and self.R_update_enabled:
+            self.importance_R = update_importance(
+                self.importance_R, delta_R, self.importance_decay
+            )
 
         return {
             "delta_D_norm": delta_D.norm().item(),
@@ -334,6 +370,120 @@ class PredictiveCell(nn.Module):
     def sparsity_level(self) -> float:
         """Last observed sparsity level (fraction of inactive units)."""
         return self._last_sparsity
+
+    def grow_units(self, k: int, current_input: torch.Tensor, residual_error: torch.Tensor):
+        """Autonomously add k new units to the predictive cell."""
+        if self.d_z + k > self.max_latent_dim:
+            k = self.max_latent_dim - self.d_z
+        if k <= 0:
+            return
+
+        print(f"[Neurogenesis] Spawning {k} new units. Capacity: {self.d_z} -> {self.d_z + k}")
+
+        # 1. Expand Generative D: concat columns (d_in, k)
+        D_born_list = []
+        for _ in range(k):
+            noise = torch.randn(self.d_in) * 0.05
+            vec = residual_error + noise
+            v_norm = vec.norm().item()
+            if v_norm > 1e-8:
+                D_born_list.append(vec / v_norm)
+            else:
+                D_born_list.append(torch.randn(self.d_in) * 0.1)
+        D_born = torch.stack(D_born_list, dim=1)
+        self.D = torch.cat([self.D, D_born], dim=1)
+
+        # 2. Expand Recognition E: concat rows (k, d_in)
+        E_born_list = []
+        for _ in range(k):
+            noise = torch.randn(self.d_in) * 0.05
+            vec = current_input + noise
+            v_norm = vec.norm().item()
+            if v_norm > 1e-8:
+                E_born_list.append(vec / v_norm)
+            else:
+                E_born_list.append(torch.randn(self.d_in) * 0.1)
+        E_born = torch.stack(E_born_list, dim=0)
+        self.E = torch.cat([self.E, E_born], dim=0)
+
+        # 3. Expand Recurrent R: both dimensions (d_z + k, d_z + k)
+        R_new = torch.zeros(self.d_z + k, self.d_z + k)
+        R_new[:self.d_z, :self.d_z] = self.R
+        R_new[self.d_z:, :] = torch.randn(k, self.d_z + k) * 0.05
+        R_new[:, self.d_z:] = torch.randn(self.d_z + k, k) * 0.05
+        self.R = R_new
+
+        # 4. Expand Lateral L: both dimensions (d_z + k, d_z + k)
+        L_new = torch.zeros(self.d_z + k, self.d_z + k)
+        L_new[:self.d_z, :self.d_z] = self.L
+        sparsity = 0.8
+        new_mask = torch.rand(self.d_z + k, self.d_z + k) > sparsity
+        new_mask.fill_diagonal_(False)
+        update_mask = torch.zeros(self.d_z + k, self.d_z + k, dtype=torch.bool)
+        update_mask[self.d_z:, :] = True
+        update_mask[:, self.d_z:] = True
+        combined_mask = new_mask & update_mask
+        L_new[combined_mask] = torch.empty(combined_mask.sum()).uniform_(-0.2, 0.0)
+        self.L = L_new
+
+        # 5. Expand Importance trackers
+        self.importance_D = torch.cat([self.importance_D, torch.zeros(self.d_in, k)], dim=1)
+        self.importance_E = torch.cat([self.importance_E, torch.zeros(k, self.d_in)], dim=0)
+        importance_R_new = torch.zeros(self.d_z + k, self.d_z + k)
+        importance_R_new[:self.d_z, :self.d_z] = self.importance_R
+        self.importance_R = importance_R_new
+
+        # 6. Expand neurogenesis trackers
+        maturity_val = 0.0 if self.maturity_enabled else 1.0
+        self.maturity = torch.cat([self.maturity, torch.full((k,), maturity_val)])
+        self.plasticity = torch.cat([self.plasticity, torch.ones(k)])
+        self.usage = torch.cat([self.usage, torch.zeros(k)])
+        self.age = torch.cat([self.age, torch.zeros(k)])
+
+        # 7. Expand current latent state vectors
+        self.z = torch.cat([self.z, torch.zeros(k)])
+        self.z_prev = torch.cat([self.z_prev, torch.zeros(k)])
+
+        # 8. Update latent dim size
+        self.d_z = self.d_z + k
+
+    def prune_units(self, min_age: int = 100, usage_threshold: float = 0.01, importance_threshold: float = 0.01, maturity_threshold: float = 0.5):
+        """Autonomously prune low-usage, low-importance, immature units."""
+        keep_mask = torch.ones(self.d_z, dtype=torch.bool)
+        for j in range(self.d_z):
+            imp_j = self.importance_D[:, j].norm().item()
+            if (self.age[j].item() > min_age and 
+                self.usage[j].item() < usage_threshold and 
+                imp_j < importance_threshold and 
+                self.maturity[j].item() < maturity_threshold):
+                keep_mask[j] = False
+
+        if keep_mask.all():
+            return
+
+        keep_indices = torch.where(keep_mask)[0]
+        n_pruned = self.d_z - len(keep_indices)
+        print(f"[Neurogenesis] Pruned {n_pruned} redundant units. Capacity: {self.d_z} -> {len(keep_indices)}")
+
+        self.D = self.D[:, keep_indices]
+        self.E = self.E[keep_indices, :]
+        self.R = self.R[keep_indices, :][:, keep_indices]
+        self.L = self.L[keep_indices, :][:, keep_indices]
+        
+        self.importance_D = self.importance_D[:, keep_indices]
+        self.importance_E = self.importance_E[keep_indices, :]
+        self.importance_R = self.importance_R[keep_indices, :][:, keep_indices]
+
+        self.maturity = self.maturity[keep_indices]
+        self.plasticity = self.plasticity[keep_indices]
+        self.usage = self.usage[keep_indices]
+        self.age = self.age[keep_indices]
+
+        self.z = self.z[keep_indices]
+        self.z_prev = self.z_prev[keep_indices]
+
+        self.d_z = len(keep_indices)
+        self.k_sparse = min(self.k_sparse, self.d_z)
 
     def reset_state(self):
         """Reset recurrent/temporal state (call between unrelated sequences)."""

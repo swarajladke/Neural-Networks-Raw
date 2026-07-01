@@ -1,0 +1,54 @@
+# Phase 3 Micro Configuration
+experiment_name: phase3_micro
+phase: 3
+results_dir: results/phase3/
+
+model:
+  d_in: 12
+  d_z: 16
+  k_sparse: 4
+  n_settle: 10
+  eta_z: 0.05
+  eta_D: 0.01
+  eta_E: 0.01
+  eta_R: 0.005
+  rho: 0.3
+  lambda_lat: 0.1
+  lambda_sparse: 0.01
+  use_sparsity: true
+  use_recurrent: true
+  use_lateral: false
+  importance_decay: 0.01
+
+memory:
+  capacity: 64
+  write_error_threshold: 0.2
+  write_novelty_threshold: 0.15
+  importance_decay: 0.999
+  min_similarity_to_skip_write: 0.95
+  replay_buffer_size: 32
+
+training:
+  n_tasks: 3
+  sequences_per_task: 5
+  sequence_length: 10
+  epochs_per_task: 5
+  n_sleep_steps: 1
+  n_sleep_replay: 8
+  sleep_lr_scale: 0.3
+  importance_protect_threshold: 0.5
+  eval_threshold: 0.3
+  log_every: 20
+  seed: 42
+
+neurogenesis:
+  enabled: true
+  alpha: 1.0
+  beta: 0.5
+  gamma: 0.0
+  delta: 0.4
+  kappa: 0.0
+  lambda_cost: 0.01
+  threshold: 0.35
+  consecutive_n: 5
+  max_units: 64

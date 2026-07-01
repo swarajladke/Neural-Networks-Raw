@@ -52,6 +52,8 @@ class SeqAgnisModel(SequenceModel):
         use_recurrent: bool = True,
         use_memory: bool = True,
         use_replay: bool = True,
+        maturity_enabled: bool = True,
+        max_latent_dim: int = 128,
     ):
         from agnis.evaluation.baselines import AgnisBaseline
         # We initialize AgnisBaseline
@@ -82,6 +84,8 @@ class SeqAgnisModel(SequenceModel):
             importance_protect_threshold=config.training.importance_protect_threshold,
             n_sleep_steps=config.training.n_sleep_steps,
             n_sleep_replay=config.training.n_sleep_replay,
+            maturity_enabled=maturity_enabled,
+            max_latent_dim=max_latent_dim,
         )
 
         # Override R flags

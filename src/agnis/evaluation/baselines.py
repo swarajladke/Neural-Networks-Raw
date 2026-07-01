@@ -305,6 +305,8 @@ class AgnisBaseline(AssociativeModel):
         importance_protect_threshold: float = 0.5,
         n_sleep_steps: int = 1,
         n_sleep_replay: int = 16,
+        maturity_enabled: bool = True,
+        max_latent_dim: int = 128,
     ):
         self.d_in_x = d_in
         self.d_out_y = d_out
@@ -328,6 +330,8 @@ class AgnisBaseline(AssociativeModel):
             use_recurrent=use_recurrent,
             use_lateral=use_lateral,
             importance_decay=importance_decay,
+            maturity_enabled=maturity_enabled,
+            max_latent_dim=max_latent_dim,
         )
 
         # Observed mask for prediction (1 on x/context, 0 on y)
