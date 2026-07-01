@@ -229,8 +229,12 @@ def main():
                         current_capacity = model.base_model.cell.d_z
                         novelty = 1.0 - model.base_model.last_retrieval_similarity
                         
+                        import math
+                        joint_dim = total_vocab_size * 2
+                        error_l2 = math.sqrt(error * joint_dim)
+
                         trigger = gc.update(
-                            error=error,
+                            error=error_l2,
                             novelty=novelty,
                             uncertainty=0.0,
                             interference=0.0,
