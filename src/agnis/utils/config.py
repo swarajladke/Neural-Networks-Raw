@@ -63,6 +63,8 @@ class TrainingConfig:
     train_chars_per_domain: int = 2000
     eval_chars_per_domain: int = 500
     epochs_per_domain: int = 2
+    stories_per_domain: int = 100
+    eval_prompts_per_domain: int = 40
 
 
 
@@ -89,6 +91,17 @@ class NeurogenesisConfig:
 
 
 @dataclass
+class GenerationConfig:
+    """Sequence generation configuration (Phase 5)."""
+    max_chars: int = 160
+    decoding: str = "greedy"
+    temperature: float = 0.0
+    top_k: int = 0
+    stop_on_double_newline: bool = True
+    repetition_ngram_n: int = 3
+
+
+@dataclass
 class AGNISConfig:
     """Full Raw AGNIS experiment configuration."""
     experiment_name: str = "phase1_associative"
@@ -97,6 +110,7 @@ class AGNISConfig:
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
     neurogenesis: NeurogenesisConfig = field(default_factory=NeurogenesisConfig)
+    generation: GenerationConfig = field(default_factory=GenerationConfig)
     results_dir: str = "results/"
 
     def to_dict(self) -> Dict[str, Any]:
@@ -140,6 +154,8 @@ def load_config(path: str) -> AGNISConfig:
         config.training = TrainingConfig(**raw["training"])
     if "neurogenesis" in raw:
         config.neurogenesis = NeurogenesisConfig(**raw["neurogenesis"])
+    if "generation" in raw:
+        config.generation = GenerationConfig(**raw["generation"])
 
     return config
 
