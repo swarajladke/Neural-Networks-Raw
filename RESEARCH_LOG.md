@@ -128,5 +128,24 @@ Copy this block for each new entry:
 **Interpretation:** Gated neurogenesis allows temporal networks to temporarily expand structural capacity to integrate new transition paths, while pruning consolidates representations back to a compact, highly efficient size. Without maturity gating, new units pollute established kWTA competitions.
 **Next Action:** Proceed to Phase 4: Character-Level continual language prediction sweeps.
 
+---
+
+## [2026-07-02] — v0.4d Phase 4 Character-Level Continual Language Setup & Smoke Validation
+
+**Phase:** Phase 4 — Character-Level Continual Language  
+**Hypothesis:** Evaluating Seq AGNIS on streaming character-level text across sequential domains requires a common vocabulary and non-leakage transient recurrent state tracking to verify domain adaptation without catastrophic forgetting.  
+**Experiment:** 
+- Designed 4 structured template-based character-generating domains (Prose, Code, Arithmetic, Dialogue) using a shared ~50-character set.
+- Implemented `CharVocab` and `CharacterStream` for one-hot text chunk sequencing.
+- Added non-leakage evaluation mode: `predict_no_state_update` and `advance_state_only` to prevent weight/capacity/memory updates during test loops.
+- Added stateless empirical `BigramBaseline` and context-dependent `TrigramBaseline`.
+- Implemented single-seed `run_char_benchmark.py`, multi-seed sweep, and summarizer.
+- Created 13 unit tests covering text domains, pipelines, non-leakage execution, and smoke runs.
+- Ran local smoke tests on prose and code domains.
+**Result:** 113 unit tests passing successfully. The smoke benchmark run successfully executed, verified dynamic capacity expansion from 16 to 64 units under character prediction errors, and saved all metrics grids correctly.
+**Interpretation:** Decoupling transient sequence state progression from Hebbian weight and memory updates allows zero-leakage benchmark evaluations of recurrent predictive models.
+**Next Action:** Execute the Phase 4 character sweeps on Kaggle.
+
+
 
 
