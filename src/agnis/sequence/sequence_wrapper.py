@@ -37,6 +37,14 @@ class SequenceModel:
         """Retrieve model diagnostics."""
         return {}
 
+    def predict_no_state_update(self, x: torch.Tensor) -> torch.Tensor:
+        """Predict next token without modifying internal state (default: delegates to predict_transition)."""
+        return self.predict_transition(x)
+
+    def advance_state_only(self, x: torch.Tensor, y: torch.Tensor):
+        """Advance recurrent/internal state without updating weights (default: no-op)."""
+        pass
+
 
 class SeqAgnisModel(SequenceModel):
     """Sequence prediction wrapper for the AgnisBaseline system."""
@@ -123,6 +131,26 @@ class SeqAgnisModel(SequenceModel):
         })
         return stats
 
+    def predict_no_state_update(self, x: torch.Tensor) -> torch.Tensor:
+        """Predict next token without modifying internal recurrent state.
+        Used during evaluation to get predictions without side effects."""
+        z_prev_backup = self.base_model.cell.z_prev.clone() if self.base_model.cell.z_prev is not None else None
+        z_backup = self.base_model.cell.z.clone() if self.base_model.cell.z is not None else None
+
+        pred = self.predict_transition(x)
+
+        self.base_model.cell.z_prev = z_prev_backup
+        self.base_model.cell.z = z_backup
+
+        return pred
+
+    def advance_state_only(self, x: torch.Tensor, y: torch.Tensor):
+        """Advance recurrent state using true (x, y) pair without updating
+        weights, memory, importance, or growth. Used during evaluation."""
+        s_joint = torch.cat([x, y])
+        _ = self.base_model.cell.forward(s_joint)
+        # Do NOT call update_weights, do NOT write to memory
+
 
 class SimpleRNNBaseline(SequenceModel):
     """Standard PyTorch Recurrent Neural Network baseline."""
@@ -165,6 +193,23 @@ class SimpleRNNBaseline(SequenceModel):
             logits = self.fc(self.h)
             prob = torch.softmax(logits, dim=-1).squeeze(0)
             return prob
+
+    def predict_no_state_update(self, x: torch.Tensor) -> torch.Tensor:
+        """Predict without modifying hidden state."""
+        with torch.no_grad():
+            h_backup = self.h.clone()
+            x_in = x.unsqueeze(0)
+            h_new = self.rnn(x_in, self.h)
+            logits = self.fc(h_new)
+            prob = torch.softmax(logits, dim=-1).squeeze(0)
+            self.h = h_backup  # restore
+            return prob
+
+    def advance_state_only(self, x: torch.Tensor, y: torch.Tensor):
+        """Advance hidden state with true input, no weight update."""
+        with torch.no_grad():
+            x_in = x.unsqueeze(0)
+            self.h = self.rnn(x_in, self.h).detach()
 
 
 class MLPWindowBaseline(SequenceModel):
@@ -225,3 +270,126 @@ class MLPWindowBaseline(SequenceModel):
             logits = self.fc2(hidden)
             prob = torch.softmax(logits, dim=-1).squeeze(0)
             return prob
+
+    def predict_no_state_update(self, x: torch.Tensor) -> torch.Tensor:
+        """Predict without modifying history."""
+        with torch.no_grad():
+            history_backup = self.history.copy()
+            window_in = self._get_window_input(x).unsqueeze(0)
+            hidden = torch.relu(self.fc1(window_in))
+            logits = self.fc2(hidden)
+            prob = torch.softmax(logits, dim=-1).squeeze(0)
+            self.history = history_backup  # restore
+            return prob
+
+    def advance_state_only(self, x: torch.Tensor, y: torch.Tensor):
+        """Advance window history with true input."""
+        self.history.append(x)
+        if len(self.history) > self.context_window:
+            self.history.pop(0)
+
+
+class BigramBaseline(SequenceModel):
+    """Empirical bigram frequency table baseline.
+
+    Counts P(next_char | current_char) from training data.
+    This is the maximum-likelihood reference for one-step context models.
+    """
+
+    def __init__(self, vocab_size: int, smoothing: float = 0.01):
+        self.vocab_size = vocab_size
+        self.smoothing = smoothing
+        self.use_memory = False
+        self.use_replay = False
+        # Count matrix: counts[i][j] = number of times char j follows char i
+        self.counts = torch.zeros(vocab_size, vocab_size)
+        self.total_per_context = torch.zeros(vocab_size)
+
+    def reset_sequence_state(self):
+        pass  # stateless
+
+    def train_transition(self, x: torch.Tensor, y: torch.Tensor) -> Dict[str, Any]:
+        x_idx = x.argmax().item()
+        y_idx = y.argmax().item()
+        self.counts[x_idx, y_idx] += 1.0
+        self.total_per_context[x_idx] += 1.0
+        return {"error": 0.0}
+
+    def predict_transition(self, x: torch.Tensor) -> torch.Tensor:
+        x_idx = x.argmax().item()
+        row = self.counts[x_idx] + self.smoothing
+        total = row.sum()
+        if total > 0:
+            return row / total
+        else:
+            return torch.ones(self.vocab_size) / self.vocab_size
+
+    def predict_no_state_update(self, x: torch.Tensor) -> torch.Tensor:
+        return self.predict_transition(x)
+
+    def advance_state_only(self, x: torch.Tensor, y: torch.Tensor):
+        pass
+
+    def sleep(self) -> Dict[str, Any]:
+        return {}
+
+    def get_stats(self) -> Dict[str, Any]:
+        nonzero = (self.counts > 0).sum().item()
+        total = self.counts.sum().item()
+        return {"nonzero_bigrams": nonzero, "total_observations": total}
+
+
+class TrigramBaseline(SequenceModel):
+    """Empirical trigram frequency table baseline.
+
+    Counts P(next_char | prev_char, current_char) from training data.
+    Reference for two-step context models.
+    """
+
+    def __init__(self, vocab_size: int, smoothing: float = 0.01):
+        self.vocab_size = vocab_size
+        self.smoothing = smoothing
+        self.use_memory = False
+        self.use_replay = False
+        # Trigram counts: indexed by (prev_idx * vocab_size + curr_idx)
+        self.counts = {}  # dict of {(prev, curr): counts_tensor}
+        self.prev_idx = None  # previous character index
+
+    def reset_sequence_state(self):
+        self.prev_idx = None
+
+    def train_transition(self, x: torch.Tensor, y: torch.Tensor) -> Dict[str, Any]:
+        x_idx = x.argmax().item()
+        y_idx = y.argmax().item()
+        if self.prev_idx is not None:
+            key = (self.prev_idx, x_idx)
+            if key not in self.counts:
+                self.counts[key] = torch.zeros(self.vocab_size)
+            self.counts[key][y_idx] += 1.0
+        self.prev_idx = x_idx
+        return {"error": 0.0}
+
+    def predict_transition(self, x: torch.Tensor) -> torch.Tensor:
+        x_idx = x.argmax().item()
+        if self.prev_idx is not None:
+            key = (self.prev_idx, x_idx)
+            if key in self.counts:
+                row = self.counts[key] + self.smoothing
+                return row / row.sum()
+        # Fall back to uniform
+        return torch.ones(self.vocab_size) / self.vocab_size
+
+    def predict_no_state_update(self, x: torch.Tensor) -> torch.Tensor:
+        return self.predict_transition(x)  # prediction doesn't change state
+
+    def advance_state_only(self, x: torch.Tensor, y: torch.Tensor):
+        x_idx = x.argmax().item()
+        self.prev_idx = x_idx
+
+    def sleep(self) -> Dict[str, Any]:
+        return {}
+
+    def get_stats(self) -> Dict[str, Any]:
+        total_contexts = len(self.counts)
+        total_obs = sum(c.sum().item() for c in self.counts.values())
+        return {"trigram_contexts": total_contexts, "total_observations": total_obs}

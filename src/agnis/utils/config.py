@@ -60,6 +60,9 @@ class TrainingConfig:
     sequence_length: int = 24
     epochs_per_task: int = 50
     sensitivity_mode: bool = False
+    train_chars_per_domain: int = 2000
+    eval_chars_per_domain: int = 500
+    epochs_per_domain: int = 2
 
 
 
