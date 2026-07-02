@@ -146,6 +146,20 @@ Copy this block for each new entry:
 **Interpretation:** Decoupling transient sequence state progression from Hebbian weight and memory updates allows zero-leakage benchmark evaluations of recurrent predictive models.
 **Next Action:** Execute the Phase 4 character sweeps on Kaggle.
 
+---
+
+## [2026-07-02] — v0.4e Phase 4 Character-Level Continual Language Sweeps Results
+
+**Phase:** Phase 4 — Character-Level Continual Language  
+**Hypothesis:** kWTA sparse Hebbian updates combined with gated neurogenesis and sleep replay prevent catastrophic forgetting on streaming character-level sequences compared to backpropagation RNNs.  
+**Experiment:** 
+- Executed Phase 4 sweeps on Kaggle across 5 seeds and 8 model variants (fixed, neurogenesis, no-maturity, no-pruning, no-replay, RNN, bigram, trigram).
+- Analyzed and aggregated performance metrics (accuracy, BPC, forgetting) across Prose, Code, Arithmetic, and Dialogue domains.
+**Result:** 113 unit tests passing. `seq_agnis_neurogenesis` achieved **17.0%** next-symbol accuracy and BPC **5.556**, dramatically reducing BPC Forgetting to **0.019±0.003** compared to the `rnn_baseline`'s **3.787±0.370** (a **199x reduction** in forgetting). The accuracy forgetting of Seq AGNIS was only **2.3%** compared to the RNN's **20.5%** (a **9x reduction**). Pruning kept capacity compact (64.0 final units, 248.4 births/prunes), while disabling maturity gating dropped average accuracy to **14.3%**.
+**Interpretation:** Gated neurogenesis coupled with sparse updates and replay consolidation successfully blocks retroactive interference, shielding temporal networks from catastrophic forgetting on language-like character sequences.
+**Next Action:** Draft implementation plan for Phase 5 (TinyStories Mini story generation).
+
+
 
 
 
