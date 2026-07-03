@@ -27,5 +27,6 @@ from agnis.text.generation_metrics import (
     compute_repetition_rate,
     compute_keyword_retention,
     compute_name_consistency,
-    compute_sentence_completion
+    compute_sentence_completion,
+    compute_distinct_n
 )

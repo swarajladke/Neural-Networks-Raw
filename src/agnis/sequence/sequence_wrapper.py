@@ -212,6 +212,66 @@ class SimpleRNNBaseline(SequenceModel):
             self.h = self.rnn(x_in, self.h).detach()
 
 
+class SimpleGRUBaseline(SequenceModel):
+    """Standard PyTorch Gated Recurrent Unit baseline."""
+
+    def __init__(self, d_in: int, d_out: int, d_hidden: int = 32, lr: float = 0.01):
+        self.d_in = d_in
+        self.d_out = d_out
+        self.d_hidden = d_hidden
+        self.use_memory = False
+        self.use_replay = False
+
+        self.rnn = nn.GRUCell(d_in, d_hidden)
+        self.fc = nn.Linear(d_hidden, d_out)
+
+        self.h = torch.zeros(1, d_hidden)
+        self.optimizer = torch.optim.Adam(
+            list(self.rnn.parameters()) + list(self.fc.parameters()), lr=lr
+        )
+        self.loss_fn = nn.CrossEntropyLoss()
+
+    def reset_sequence_state(self):
+        self.h = torch.zeros(1, self.d_hidden)
+
+    def train_transition(self, x: torch.Tensor, y: torch.Tensor) -> Dict[str, Any]:
+        self.optimizer.zero_grad()
+        x_in = x.unsqueeze(0)  # (1, d_in)
+        self.h = self.rnn(x_in, self.h)
+        logits = self.fc(self.h)
+        target = y.argmax().unsqueeze(0)
+        loss = self.loss_fn(logits, target)
+        loss.backward()
+        self.optimizer.step()
+        self.h = self.h.detach()
+        return {"error": loss.item()}
+
+    def predict_transition(self, x: torch.Tensor) -> torch.Tensor:
+        with torch.no_grad():
+            x_in = x.unsqueeze(0)
+            self.h = self.rnn(x_in, self.h)
+            logits = self.fc(self.h)
+            prob = torch.softmax(logits, dim=-1).squeeze(0)
+            return prob
+
+    def predict_no_state_update(self, x: torch.Tensor) -> torch.Tensor:
+        """Predict without modifying hidden state."""
+        with torch.no_grad():
+            h_backup = self.h.clone()
+            x_in = x.unsqueeze(0)
+            h_new = self.rnn(x_in, self.h)
+            logits = self.fc(h_new)
+            prob = torch.softmax(logits, dim=-1).squeeze(0)
+            self.h = h_backup  # restore
+            return prob
+
+    def advance_state_only(self, x: torch.Tensor, y: torch.Tensor):
+        """Advance hidden state with true input, no weight update."""
+        with torch.no_grad():
+            x_in = x.unsqueeze(0)
+            self.h = self.rnn(x_in, self.h).detach()
+
+
 class MLPWindowBaseline(SequenceModel):
     """MLP baseline that maps a sliding context window of history to predictions."""
 

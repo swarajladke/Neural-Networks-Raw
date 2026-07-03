@@ -6,7 +6,8 @@ from agnis.text.generation_metrics import (
     compute_repetition_rate,
     compute_keyword_retention,
     compute_name_consistency,
-    compute_sentence_completion
+    compute_sentence_completion,
+    compute_distinct_n
 )
 
 
@@ -55,3 +56,17 @@ def test_sentence_completion():
     assert compute_sentence_completion("is the story done?") == 1.0
     assert compute_sentence_completion("incomplete story") == 0.0
     assert compute_sentence_completion("") == 0.0
+
+
+def test_distinct_n():
+    text = "abc abc abc"
+    # trigrams: 9 total, 4 unique -> distinct_3 = 4/9 = 0.444
+    d3 = compute_distinct_n(text, n=3)
+    assert 0.44 < d3 < 0.45
+    
+    # bigrams: total 10, unique 4 -> distinct_2 = 0.4
+    d2 = compute_distinct_n(text, n=2)
+    assert abs(d2 - 0.4) < 1e-4
+    
+    # Completely unique text: distinct_n = 1.0
+    assert compute_distinct_n("abcdefgh", n=3) == 1.0

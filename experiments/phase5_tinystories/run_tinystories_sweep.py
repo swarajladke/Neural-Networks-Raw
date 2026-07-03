@@ -65,7 +65,7 @@ def main():
     parser.add_argument(
         "--models",
         type=str,
-        default="bigram_baseline,trigram_baseline,rnn_baseline,seq_agnis_fixed,seq_agnis_no_replay,seq_agnis_neurogenesis,seq_agnis_neuro_no_maturity,seq_agnis_neuro_no_pruning",
+        default="bigram_baseline,trigram_baseline,rnn_baseline,gru_baseline,seq_agnis_fixed,seq_agnis_no_replay,seq_agnis_neurogenesis,seq_agnis_neuro_no_maturity,seq_agnis_neuro_no_pruning",
         help="Comma-separated model names to evaluate",
     )
     args = parser.parse_args()

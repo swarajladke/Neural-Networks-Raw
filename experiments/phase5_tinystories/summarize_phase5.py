@@ -61,6 +61,8 @@ def summarize_phase5_results(results_dir: str):
         "Keyword_Retention_Mean",
         "Name_Consistency_Mean",
         "Sentence_Completion_Mean",
+        "Distinct_2_Mean",
+        "Distinct_3_Mean",
         "Final_Dim_Mean",
         "Final_Dim_Std",
         "Births_Mean",
@@ -75,9 +77,9 @@ def summarize_phase5_results(results_dir: str):
     
     md_report += (
         "| Model | Seeds | Cont Acc (mean±std) | Cont BPC (mean±std) | Acc Forg | BPC Forg | "
-        "Rep Rate | Key Ret | Name Cons | Sent Comp | Final Dim (mean±std) | Births | Prunes | Runtime |\n"
+        "Rep Rate | Key Ret | Name Cons | Sent Comp | Dist-2 | Dist-3 | Final Dim (mean±std) | Births | Prunes | Runtime |\n"
     )
-    md_report += "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n"
+    md_report += "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n"
 
     for model in sorted(raw_data.keys()):
         runs = raw_data[model]
@@ -92,6 +94,8 @@ def summarize_phase5_results(results_dir: str):
         key_ret = [r.get("average_keyword_retention", 0.0) for r in runs]
         name_cons = [r.get("average_name_consistency", 0.0) for r in runs]
         sent_comp = [r.get("average_sentence_completion_rate", 0.0) for r in runs]
+        dist2 = [r.get("average_distinct_2", 0.0) for r in runs]
+        dist3 = [r.get("average_distinct_3", 0.0) for r in runs]
         
         dims = [r["final_d_z"] for r in runs]
         births = [r["total_units_born"] for r in runs]
@@ -107,6 +111,8 @@ def summarize_phase5_results(results_dir: str):
         key_mean = np.mean(key_ret)
         name_mean = np.mean(name_cons)
         sent_mean = np.mean(sent_comp)
+        dist2_mean = np.mean(dist2)
+        dist3_mean = np.mean(dist3)
         
         dim_mean, dim_std = np.mean(dims), np.std(dims)
         birth_mean = np.mean(births)
@@ -125,6 +131,8 @@ def summarize_phase5_results(results_dir: str):
             key_mean,
             name_mean,
             sent_mean,
+            dist2_mean,
+            dist3_mean,
             dim_mean, dim_std,
             birth_mean,
             prune_mean,
@@ -137,6 +145,7 @@ def summarize_phase5_results(results_dir: str):
             f"{acc_mean:.3f}±{acc_std:.3f} | {bpc_mean:.3f}±{bpc_std:.3f} | "
             f"{acc_forg_mean:.3f}±{acc_forg_std:.3f} | {bpc_forg_mean:.3f}±{bpc_forg_std:.3f} | "
             f"{rep_mean:.1%} | {key_mean:.1%} | {name_mean:.1%} | {sent_mean:.1%} | "
+            f"{dist2_mean:.1%} | {dist3_mean:.1%} | "
             f"{dim_mean:.1f}±{dim_std:.1f} | {birth_mean:.1f} | {prune_mean:.1f} | {runtime_mean:.1f}s |\n"
         )
 

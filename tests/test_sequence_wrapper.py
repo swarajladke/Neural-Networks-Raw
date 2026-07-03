@@ -10,6 +10,7 @@ from agnis.utils.config import default_config
 from agnis.sequence.sequence_wrapper import (
     SeqAgnisModel,
     SimpleRNNBaseline,
+    SimpleGRUBaseline,
     MLPWindowBaseline,
 )
 
@@ -22,6 +23,7 @@ def test_sequence_wrappers_training_and_reset():
     models = [
         SeqAgnisModel(d_in, d_out, d_z=8, config=config),
         SimpleRNNBaseline(d_in, d_out, d_hidden=8),
+        SimpleGRUBaseline(d_in, d_out, d_hidden=8),
         MLPWindowBaseline(d_in, d_out, context_window=2),
     ]
     

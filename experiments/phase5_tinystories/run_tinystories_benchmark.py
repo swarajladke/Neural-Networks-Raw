@@ -26,11 +26,12 @@ from agnis.text.generation_metrics import (
     compute_repetition_rate,
     compute_keyword_retention,
     compute_name_consistency,
-    compute_sentence_completion
+    compute_sentence_completion,
+    compute_distinct_n
 )
 from agnis.text.char_metrics import compute_forgetting, compute_bpc_forgetting, compute_growth_efficiency
 from agnis.sequence.sequence_wrapper import (
-    SeqAgnisModel, SimpleRNNBaseline, BigramBaseline, TrigramBaseline
+    SeqAgnisModel, SimpleRNNBaseline, SimpleGRUBaseline, BigramBaseline, TrigramBaseline
 )
 from agnis.neurogenesis.growth_controller import GrowthController
 from agnis.utils.config import load_config, AGNISConfig
@@ -41,7 +42,7 @@ def main():
     parser.add_argument("--model", type=str, required=True,
                         choices=['seq_agnis_fixed', 'seq_agnis_neurogenesis',
                                  'seq_agnis_neuro_no_maturity', 'seq_agnis_neuro_no_pruning',
-                                 'seq_agnis_no_replay', 'rnn_baseline', 'bigram_baseline', 'trigram_baseline'],
+                                 'seq_agnis_no_replay', 'rnn_baseline', 'gru_baseline', 'bigram_baseline', 'trigram_baseline'],
                         help="Model variant to evaluate")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--config", type=str, default="configs/kaggle_phase5.yaml", help="Path to config YAML")
@@ -112,6 +113,8 @@ def main():
         )
     elif model_key == 'rnn_baseline':
         model = SimpleRNNBaseline(d_in=d_symbol, d_out=d_symbol, d_hidden=config.model.d_z)
+    elif model_key == 'gru_baseline':
+        model = SimpleGRUBaseline(d_in=d_symbol, d_out=d_symbol, d_hidden=config.model.d_z)
     elif model_key == 'bigram_baseline':
         model = BigramBaseline(vocab_size=d_symbol)
     elif model_key == 'trigram_baseline':
@@ -146,6 +149,8 @@ def main():
     keyword_retentions = []
     name_consistencies = []
     sentence_completions = []
+    distinct_2_rates = []
+    distinct_3_rates = []
     
     capacity_timeline = []
     training_errors = []
@@ -292,6 +297,8 @@ def main():
         task_keywords = []
         task_names = []
         task_completion = []
+        task_distinct_2 = []
+        task_distinct_3 = []
         
         for eval_idx, eval_domain in enumerate(domains):
             eval_stories = eval_domain.get_eval_stories(eval_prompts, seed=args.seed)
@@ -302,6 +309,8 @@ def main():
             key_acc = 0.0
             name_acc = 0.0
             comp_acc = 0.0
+            dist2_acc = 0.0
+            dist3_acc = 0.0
             
             # Open files to save text samples for this task boundary
             # If final task boundary (t_idx == n_tasks - 1), it saves the final completions
@@ -347,6 +356,8 @@ def main():
                     key_acc += compute_keyword_retention(gen_text, eval_domain.name)
                     name_acc += compute_name_consistency(gen_text)
                     comp_acc += compute_sentence_completion(gen_text)
+                    dist2_acc += compute_distinct_n(gen_text, n=2)
+                    dist3_acc += compute_distinct_n(gen_text, n=3)
                     
                     if s_i < 3: # Save first 3 stories as sample references
                         sf.write(f"PROMPT: {prompt}\n")
@@ -356,7 +367,9 @@ def main():
                         sf.write(f"  Repetition Rate: {compute_repetition_rate(gen_text, n=config.generation.repetition_ngram_n):.3f}\n")
                         sf.write(f"  Keyword Retention: {compute_keyword_retention(gen_text, eval_domain.name):.3f}\n")
                         sf.write(f"  Name Consistency: {compute_name_consistency(gen_text):.3f}\n")
-                        sf.write(f"  Sentence Completion: {compute_sentence_completion(gen_text):.3f}\n\n")
+                        sf.write(f"  Sentence Completion: {compute_sentence_completion(gen_text):.3f}\n")
+                        sf.write(f"  Distinct-2: {compute_distinct_n(gen_text, n=2):.3f}\n")
+                        sf.write(f"  Distinct-3: {compute_distinct_n(gen_text, n=3):.3f}\n\n")
                         sf.write("-" * 40 + "\n\n")
             
             if save_samples:
@@ -367,6 +380,8 @@ def main():
             task_keywords.append(key_acc / n_gen_total)
             task_names.append(name_acc / n_gen_total)
             task_completion.append(comp_acc / n_gen_total)
+            task_distinct_2.append(dist2_acc / n_gen_total)
+            task_distinct_3.append(dist3_acc / n_gen_total)
             
             row_after.append(metrics_eval.accuracy)
             bpc_after.append(metrics_eval.bpc)
@@ -375,6 +390,7 @@ def main():
         print(f"  Continuation BPC (after sleep):       {['{:.3f}'.format(b) for b in bpc_after]}")
         print(f"  Repetition rates:                    {['{:.3f}'.format(r) for r in task_repetition]}")
         print(f"  Keyword retentions:                  {['{:.3f}'.format(k) for k in task_keywords]}")
+        print(f"  Distinct-2 rates:                    {['{:.3f}'.format(d2) for d2 in task_distinct_2]}")
         
         accuracy_matrix_after.append(row_after)
         bpc_matrix_after.append(bpc_after)
@@ -383,6 +399,8 @@ def main():
         keyword_retentions.append(task_keywords)
         name_consistencies.append(task_names)
         sentence_completions.append(task_completion)
+        distinct_2_rates.append(task_distinct_2)
+        distinct_3_rates.append(task_distinct_3)
 
     # Compute aggregation statistics
     runtime = time.time() - start_time
@@ -404,6 +422,8 @@ def main():
     final_keywords = sum(keyword_retentions[-1]) / n_tasks
     final_names = sum(name_consistencies[-1]) / n_tasks
     final_completion = sum(sentence_completions[-1]) / n_tasks
+    final_distinct_2 = sum(distinct_2_rates[-1]) / n_tasks
+    final_distinct_3 = sum(distinct_3_rates[-1]) / n_tasks
 
     initial_dz = config.model.d_z
     final_dz = model.base_model.cell.d_z if hasattr(model, 'base_model') else initial_dz
@@ -433,6 +453,8 @@ def main():
         "average_keyword_retention": final_keywords,
         "average_name_consistency": final_names,
         "average_sentence_completion_rate": final_completion,
+        "average_distinct_2": final_distinct_2,
+        "average_distinct_3": final_distinct_3,
         "initial_d_z": initial_dz,
         "final_d_z": final_dz,
         "total_units_born": total_births,

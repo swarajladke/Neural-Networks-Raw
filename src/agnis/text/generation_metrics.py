@@ -76,3 +76,18 @@ def compute_sentence_completion(text: str) -> float:
     if not trimmed:
         return 0.0
     return 1.0 if trimmed[-1] in {".", "!", "?"} else 0.0
+
+
+def compute_distinct_n(text: str, n: int) -> float:
+    """Compute the distinct n-gram ratio (Distinct-N) in generated text.
+    
+    distinct_n = len(unique_ngrams) / len(total_ngrams)
+    """
+    if len(text) < n:
+        return 0.0
+        
+    ngrams = [text[i:i+n] for i in range(len(text) - n + 1)]
+    if not ngrams:
+        return 0.0
+        
+    return len(set(ngrams)) / len(ngrams)
