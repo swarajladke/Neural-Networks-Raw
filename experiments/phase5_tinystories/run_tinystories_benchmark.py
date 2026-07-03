@@ -151,6 +151,7 @@ def main():
     sentence_completions = []
     distinct_2_rates = []
     distinct_3_rates = []
+    maturity_history = []
     
     capacity_timeline = []
     training_errors = []
@@ -287,6 +288,12 @@ def main():
                 pruned = initial_cap - final_cap
                 total_prunes += pruned
                 print(f"  [Neurogenesis] Pruned {pruned} units. Capacity: {initial_cap} -> {final_cap}")
+
+        # Log maturity distribution at the end of task training
+        if hasattr(model, 'base_model') and hasattr(model.base_model.cell, 'maturity'):
+            maturity_history.append(model.base_model.cell.maturity.tolist())
+        else:
+            maturity_history.append([])
 
         # Evaluate after sleep
         print(f"[Phase5] Evaluating continuation quality AFTER sleep...")
@@ -461,6 +468,7 @@ def main():
         "total_units_pruned": total_prunes,
         "replay_benefit_accuracy": rep_ben_acc,
         "replay_benefit_bpc": rep_ben_bpc,
+        "maturity_history": maturity_history,
         "runtime_seconds": runtime
     }
 
