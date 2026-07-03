@@ -330,42 +330,43 @@ def main():
                     current_char = true_next_char
                 
                 # Text generation (greedy completion)
-                gen_text = generate_continuation(
-                    model=model,
-                    prompt=prompt,
-                    vocab=vocab,
-                    max_chars=config.generation.max_chars,
-                    decoding=config.generation.decoding,
-                    temperature=config.generation.temperature,
-                    top_k=config.generation.top_k,
-                    stop_on_double_newline=config.generation.stop_on_double_newline
-                )
-                
-                # Compute story quality scores
-                rep_acc += compute_repetition_rate(gen_text, n=config.generation.repetition_ngram_n)
-                key_acc += compute_keyword_retention(gen_text, eval_domain.name)
-                name_acc += compute_name_consistency(gen_text)
-                comp_acc += compute_sentence_completion(gen_text)
-                
-                if save_samples and s_i < 3: # Save first 3 stories as sample references
-                    sf.write(f"PROMPT: {prompt}\n")
-                    sf.write(f"TARGET: {target.strip()}\n")
-                    sf.write(f"GENERATED: {gen_text.strip()}\n")
-                    sf.write(f"METRICS:\n")
-                    sf.write(f"  Repetition Rate: {compute_repetition_rate(gen_text, n=config.generation.repetition_ngram_n):.3f}\n")
-                    sf.write(f"  Keyword Retention: {compute_keyword_retention(gen_text, eval_domain.name):.3f}\n")
-                    sf.write(f"  Name Consistency: {compute_name_consistency(gen_text):.3f}\n")
-                    sf.write(f"  Sentence Completion: {compute_sentence_completion(gen_text):.3f}\n\n")
-                    sf.write("-" * 40 + "\n\n")
+                if save_samples and s_i < min(10, eval_prompts):
+                    gen_text = generate_continuation(
+                        model=model,
+                        prompt=prompt,
+                        vocab=vocab,
+                        max_chars=config.generation.max_chars,
+                        decoding=config.generation.decoding,
+                        temperature=config.generation.temperature,
+                        top_k=config.generation.top_k,
+                        stop_on_double_newline=config.generation.stop_on_double_newline
+                    )
+                    
+                    # Compute story quality scores
+                    rep_acc += compute_repetition_rate(gen_text, n=config.generation.repetition_ngram_n)
+                    key_acc += compute_keyword_retention(gen_text, eval_domain.name)
+                    name_acc += compute_name_consistency(gen_text)
+                    comp_acc += compute_sentence_completion(gen_text)
+                    
+                    if s_i < 3: # Save first 3 stories as sample references
+                        sf.write(f"PROMPT: {prompt}\n")
+                        sf.write(f"TARGET: {target.strip()}\n")
+                        sf.write(f"GENERATED: {gen_text.strip()}\n")
+                        sf.write(f"METRICS:\n")
+                        sf.write(f"  Repetition Rate: {compute_repetition_rate(gen_text, n=config.generation.repetition_ngram_n):.3f}\n")
+                        sf.write(f"  Keyword Retention: {compute_keyword_retention(gen_text, eval_domain.name):.3f}\n")
+                        sf.write(f"  Name Consistency: {compute_name_consistency(gen_text):.3f}\n")
+                        sf.write(f"  Sentence Completion: {compute_sentence_completion(gen_text):.3f}\n\n")
+                        sf.write("-" * 40 + "\n\n")
             
             if save_samples:
                 sf.close()
                 
-            n_stories = len(eval_stories)
-            task_repetition.append(rep_acc / n_stories)
-            task_keywords.append(key_acc / n_stories)
-            task_names.append(name_acc / n_stories)
-            task_completion.append(comp_acc / n_stories)
+            n_gen_total = min(10, eval_prompts) if save_samples else 1
+            task_repetition.append(rep_acc / n_gen_total)
+            task_keywords.append(key_acc / n_gen_total)
+            task_names.append(name_acc / n_gen_total)
+            task_completion.append(comp_acc / n_gen_total)
             
             row_after.append(metrics_eval.accuracy)
             bpc_after.append(metrics_eval.bpc)
