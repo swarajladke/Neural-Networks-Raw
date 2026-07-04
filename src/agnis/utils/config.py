@@ -29,6 +29,16 @@ class ModelConfig:
     use_recurrent: bool = False
     use_lateral: bool = False
     importance_decay: float = 0.01
+    # Phase 5 fixes (all default off; Phases 1-4 behavior unchanged)
+    use_softmax_output: bool = False   # CE-gradient error on target slice
+    use_fatigue: bool = False          # kWTA adaptation (limit-cycle breaker)
+    fatigue_decay: float = 0.9
+    gamma_fatigue: float = 0.5
+    use_precision_gating: bool = False # surprise-driven E vs R balance
+    gate_alpha_min: float = 0.2
+    gate_alpha_max: float = 0.8
+    gate_beta: float = 1.0
+    gate_ema: float = 0.05
 
 
 @dataclass

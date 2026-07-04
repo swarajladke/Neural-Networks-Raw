@@ -307,6 +307,15 @@ class AgnisBaseline(AssociativeModel):
         n_sleep_replay: int = 16,
         maturity_enabled: bool = True,
         max_latent_dim: int = 128,
+        use_softmax_output: bool = False,
+        use_fatigue: bool = False,
+        fatigue_decay: float = 0.9,
+        gamma_fatigue: float = 0.5,
+        use_precision_gating: bool = False,
+        gate_alpha_min: float = 0.2,
+        gate_alpha_max: float = 0.8,
+        gate_beta: float = 1.0,
+        gate_ema: float = 0.05,
     ):
         self.d_in_x = d_in
         self.d_out_y = d_out
@@ -332,6 +341,16 @@ class AgnisBaseline(AssociativeModel):
             importance_decay=importance_decay,
             maturity_enabled=maturity_enabled,
             max_latent_dim=max_latent_dim,
+            output_slice_start=self.d_in_x,
+            use_softmax_output=use_softmax_output,
+            use_fatigue=use_fatigue,
+            fatigue_decay=fatigue_decay,
+            gamma_fatigue=gamma_fatigue,
+            use_precision_gating=use_precision_gating,
+            gate_alpha_min=gate_alpha_min,
+            gate_alpha_max=gate_alpha_max,
+            gate_beta=gate_beta,
+            gate_ema=gate_ema,
         )
 
         # Observed mask for prediction (1 on x/context, 0 on y)

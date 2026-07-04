@@ -94,6 +94,15 @@ class SeqAgnisModel(SequenceModel):
             n_sleep_replay=config.training.n_sleep_replay,
             maturity_enabled=maturity_enabled,
             max_latent_dim=max_latent_dim,
+            use_softmax_output=getattr(config.model, "use_softmax_output", False),
+            use_fatigue=getattr(config.model, "use_fatigue", False),
+            fatigue_decay=getattr(config.model, "fatigue_decay", 0.9),
+            gamma_fatigue=getattr(config.model, "gamma_fatigue", 0.5),
+            use_precision_gating=getattr(config.model, "use_precision_gating", False),
+            gate_alpha_min=getattr(config.model, "gate_alpha_min", 0.2),
+            gate_alpha_max=getattr(config.model, "gate_alpha_max", 0.8),
+            gate_beta=getattr(config.model, "gate_beta", 1.0),
+            gate_ema=getattr(config.model, "gate_ema", 0.05),
         )
 
         # Override R flags

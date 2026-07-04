@@ -18,6 +18,16 @@ model:
   use_recurrent: true
   use_lateral: false
   importance_decay: 0.005
+  # Phase 5 fixes: CE error geometry, latent fatigue, precision gating
+  use_softmax_output: true
+  use_fatigue: true
+  fatigue_decay: 0.9
+  gamma_fatigue: 0.5
+  use_precision_gating: true
+  gate_alpha_min: 0.2
+  gate_alpha_max: 0.8
+  gate_beta: 1.0
+  gate_ema: 0.05
 
 memory:
   capacity: 512
@@ -59,8 +69,11 @@ neurogenesis:
 
 generation:
   max_chars: 160
-  decoding: greedy
-  temperature: 0.0
-  top_k: 0
+  # Sampled decoding: deterministic greedy on a finite kWTA state space
+  # provably enters limit cycles (ooooo...). Temperature + top-k breaks
+  # symbol-level determinism; latent fatigue breaks state-level cycles.
+  decoding: sample
+  temperature: 0.7
+  top_k: 5
   stop_on_double_newline: true
   repetition_ngram_n: 3
