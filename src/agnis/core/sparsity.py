@@ -17,7 +17,7 @@ import torch
 from typing import Optional
 
 
-def kwta(a: torch.Tensor, k: int) -> torch.Tensor:
+def kwta(a: torch.Tensor, k: int, bias: Optional[torch.Tensor] = None) -> torch.Tensor:
     """
     k-Winners-Take-All: Keep the top-k activations, zero the rest.
 
@@ -27,6 +27,12 @@ def kwta(a: torch.Tensor, k: int) -> torch.Tensor:
         Activation vector before sparsification.
     k : int
         Number of units to keep active. If k >= d_z, returns a unchanged.
+    bias : torch.Tensor of shape (d_z,), optional
+        Per-unit competition bias subtracted from the selection score
+        (|a| - bias). Used for latent fatigue/adaptation: recently active
+        units accumulate bias and are handicapped in the competition,
+        which destroys short deterministic limit cycles. Retained values
+        are the ORIGINAL activations; only winner selection is biased.
 
     Returns
     -------
@@ -42,13 +48,15 @@ def kwta(a: torch.Tensor, k: int) -> torch.Tensor:
     if k >= d_z:
         return a  # dense mode — no sparsity applied
 
-    # Find threshold: the k-th largest absolute value
+    # Selection score: absolute value, optionally handicapped by fatigue bias
     abs_a = a.abs()
-    # topk returns values and indices; threshold is the smallest of the top-k
-    threshold_val = torch.topk(abs_a, k, largest=True, sorted=True).values[-1]
+    score = abs_a - bias if bias is not None else abs_a
 
-    # Create mask: keep units where |a| >= threshold
-    mask = abs_a >= threshold_val
+    # Find threshold: the k-th largest score
+    threshold_val = torch.topk(score, k, largest=True, sorted=True).values[-1]
+
+    # Create mask: keep units where score >= threshold
+    mask = score >= threshold_val
 
     # If more than k units pass (ties), keep exactly k by additional selection
     if mask.sum() > k:
