@@ -121,40 +121,40 @@ class PredictiveCell(nn.Module):
         self.max_latent_dim = max_latent_dim
         self.maturity_enabled = maturity_enabled
 
-        # Neurogenesis state trackers
-        self.maturity = torch.ones(d_z)
-        self.plasticity = torch.ones(d_z)
-        self.usage = torch.zeros(d_z)
-        self.age = torch.zeros(d_z)
+        # Neurogenesis state trackers (registered as PyTorch buffers for device/serialization safety)
+        self.register_buffer("maturity", torch.ones(d_z))
+        self.register_buffer("plasticity", torch.ones(d_z))
+        self.register_buffer("usage", torch.zeros(d_z))
+        self.register_buffer("age", torch.zeros(d_z))
 
-        # ── Weight matrices (not nn.Parameters — we update manually) ──────────
+        # ── Weight matrices (registered as buffers — updated manually via Hebbian rules)
         # Generative: D (d_in x d_z) — decodes latent to input space
-        self.D = torch.nn.init.xavier_uniform_(
+        self.register_buffer("D", torch.nn.init.xavier_uniform_(
             torch.empty(d_in, d_z)
-        )
+        ))
         # Recognition: E (d_z x d_in) — encodes input to latent space
-        self.E = torch.nn.init.xavier_uniform_(
+        self.register_buffer("E", torch.nn.init.xavier_uniform_(
             torch.empty(d_z, d_in)
-        )
+        ))
         # Recurrent: R (d_z x d_z) — temporal state injection
-        self.R = torch.zeros(d_z, d_z)
-        torch.nn.init.orthogonal_(self.R)
-        self.R = self.R * 0.1  # start small and stable
+        R_temp = torch.zeros(d_z, d_z)
+        torch.nn.init.orthogonal_(R_temp)
+        self.register_buffer("R", R_temp * 0.1)  # start small and stable
 
         # Lateral: L (d_z x d_z) — sparse inhibitory connections
         # Off-diagonal negative, diagonal zero
-        self.L = torch.zeros(d_z, d_z)
+        self.register_buffer("L", torch.zeros(d_z, d_z))
         if use_lateral:
             self._init_lateral_connections()
 
         # ── Per-weight importance (d_in x d_z for D, d_z x d_in for E) ───────
-        self.importance_D = torch.zeros(d_in, d_z)
-        self.importance_E = torch.zeros(d_z, d_in)
-        self.importance_R = torch.zeros(d_z, d_z)
+        self.register_buffer("importance_D", torch.zeros(d_in, d_z))
+        self.register_buffer("importance_E", torch.zeros(d_z, d_in))
+        self.register_buffer("importance_R", torch.zeros(d_z, d_z))
 
         # ── Latent state ──────────────────────────────────────────────────────
-        self.z = torch.zeros(d_z)
-        self.z_prev = torch.zeros(d_z)
+        self.register_buffer("z", torch.zeros(d_z))
+        self.register_buffer("z_prev", torch.zeros(d_z))
 
         # ── Metrics ───────────────────────────────────────────────────────────
         self.recurrent_drive_norms = []
@@ -447,6 +447,21 @@ class PredictiveCell(nn.Module):
         # 8. Update latent dim size
         self.d_z = self.d_z + k
 
+        # 9. Re-register buffers to update PyTorch's internal state
+        self.register_buffer("D", self.D)
+        self.register_buffer("E", self.E)
+        self.register_buffer("R", self.R)
+        self.register_buffer("L", self.L)
+        self.register_buffer("importance_D", self.importance_D)
+        self.register_buffer("importance_E", self.importance_E)
+        self.register_buffer("importance_R", self.importance_R)
+        self.register_buffer("maturity", self.maturity)
+        self.register_buffer("plasticity", self.plasticity)
+        self.register_buffer("usage", self.usage)
+        self.register_buffer("age", self.age)
+        self.register_buffer("z", self.z)
+        self.register_buffer("z_prev", self.z_prev)
+
     def prune_units(self, min_age: int = 100, usage_threshold: float = 0.01, importance_threshold: float = 0.01, maturity_threshold: float = 0.5):
         """Autonomously prune low-usage, low-importance, immature units."""
         keep_mask = torch.ones(self.d_z, dtype=torch.bool)
@@ -484,6 +499,21 @@ class PredictiveCell(nn.Module):
 
         self.d_z = len(keep_indices)
         self.k_sparse = min(self.k_sparse, self.d_z)
+
+        # Re-register buffers to update PyTorch's internal state
+        self.register_buffer("D", self.D)
+        self.register_buffer("E", self.E)
+        self.register_buffer("R", self.R)
+        self.register_buffer("L", self.L)
+        self.register_buffer("importance_D", self.importance_D)
+        self.register_buffer("importance_E", self.importance_E)
+        self.register_buffer("importance_R", self.importance_R)
+        self.register_buffer("maturity", self.maturity)
+        self.register_buffer("plasticity", self.plasticity)
+        self.register_buffer("usage", self.usage)
+        self.register_buffer("age", self.age)
+        self.register_buffer("z", self.z)
+        self.register_buffer("z_prev", self.z_prev)
 
     def reset_state(self):
         """Reset recurrent/temporal state (call between unrelated sequences)."""
