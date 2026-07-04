@@ -627,6 +627,7 @@ class PredictiveCell(nn.Module):
         """Reset recurrent/temporal state (call between unrelated sequences)."""
         self.z = torch.zeros(self.d_z)
         self.z_prev = torch.zeros(self.d_z)
+        self.fatigue = torch.zeros(self.d_z)
         self.recurrent_drive_norms.clear()
         self.R_update_norms.clear()
 
