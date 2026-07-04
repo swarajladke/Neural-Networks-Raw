@@ -426,7 +426,7 @@ class PredictiveCell(nn.Module):
 
         # Compute error before and after update to calculate maturity update
         err_before = e.norm().item()
-        s_hat_after = self.D @ a
+        s_hat_after = self._predict_s(a)
         e_after = s - s_hat_after
         if self._last_mask is not None:
             e_after = e_after * self._last_mask
