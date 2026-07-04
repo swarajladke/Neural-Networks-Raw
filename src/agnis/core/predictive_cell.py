@@ -247,15 +247,26 @@ class PredictiveCell(nn.Module):
 
         z = self.z.clone()
 
+        # Precision gate: balance recognition (E) vs recurrent (R) drives.
+        # alpha = 0.5 recovers the ungated dynamics exactly (gains = 1).
+        alpha = self._compute_gate()
+        self.last_gate = alpha
+        if self.use_precision_gating:
+            gain_rec = 2.0 * alpha
+            gain_time = 2.0 * (1.0 - alpha)
+        else:
+            gain_rec = 1.0
+            gain_time = 1.0
+
         for _ in range(self.n_settle):
             a = self.maturity * self.activation(z)
 
             # Apply kWTA during settling if sparsity is enabled
-            if self.use_sparsity:
-                a = kwta(a, self.k_sparse)
+            # (fatigue-biased competition when use_fatigue is set)
+            a = self._sparsify(a)
 
-            # Predicted reconstruction
-            s_hat = self.D @ a  # (d_in,)
+            # Predicted reconstruction (softmax on target slice if enabled)
+            s_hat = self._predict_s(a)  # (d_in,)
 
             # Prediction error
             e = s - s_hat  # (d_in,)
@@ -278,11 +289,11 @@ class PredictiveCell(nn.Module):
             if self.use_lateral:
                 d_lat = self.L @ a
 
-            # Settling update
+            # Settling update (precision-gated recognition vs recurrent)
             delta_z = (
-                d_rec
+                gain_rec * d_rec
                 + d_fb
-                + self.rho * d_time
+                + gain_time * self.rho * d_time
                 + self.lambda_lat * d_lat
                 - self.lambda_sparse * torch.sign(z)
             )
@@ -293,14 +304,21 @@ class PredictiveCell(nn.Module):
 
         # Final activation after settling
         a = self.maturity * self.activation(z)
-        if self.use_sparsity:
-            a = kwta(a, self.k_sparse)
+        a = self._sparsify(a)
 
         # Compute final prediction and error for metrics
-        s_hat = self.D @ a
+        s_hat = self._predict_s(a)
         e = s - s_hat
         if observed_mask is not None:
             e = e * observed_mask
+
+        # Fatigue trace: only track the actual trajectory (training /
+        # state-advance steps, observed_mask is None), not masked query
+        # lookups, so evaluation predictions have no side effects here.
+        if self.use_fatigue and observed_mask is None:
+            active = (a != 0).float()
+            self.fatigue = self.fatigue_decay * self._fatigue_vec() \
+                + (1.0 - self.fatigue_decay) * active
 
         # Store state
         self.z_prev = self.z.clone()
@@ -311,6 +329,57 @@ class PredictiveCell(nn.Module):
         self._last_sparsity = compute_sparsity_level(a)
 
         return a
+
+    def _fatigue_vec(self) -> torch.Tensor:
+        """Fatigue trace, resized on demand after neurogenesis growth/pruning."""
+        if self.fatigue.shape[0] != self.d_z:
+            f = torch.zeros(self.d_z)
+            n = min(self.fatigue.shape[0], self.d_z)
+            f[:n] = self.fatigue[:n]
+            self.fatigue = f
+        return self.fatigue
+
+    def _sparsify(self, a: torch.Tensor) -> torch.Tensor:
+        """Apply kWTA, optionally handicapping recently active units (fatigue)."""
+        if not self.use_sparsity:
+            return a
+        bias = self.gamma_fatigue * self._fatigue_vec() if self.use_fatigue else None
+        return kwta(a, self.k_sparse, bias=bias)
+
+    def _predict_s(self, a: torch.Tensor) -> torch.Tensor:
+        """Generative prediction of s from activation a.
+
+        With softmax output enabled, the target slice is normalized so the
+        resulting error e_y = y - softmax(logits_y) is the cross-entropy
+        gradient at the output (fully local, no autograd).
+        """
+        s_hat = self.D @ a
+        if self.use_softmax_output and self.output_slice_start is not None:
+            sl = self.output_slice_start
+            s_hat = torch.cat([s_hat[:sl], torch.softmax(s_hat[sl:], dim=-1)])
+        return s_hat
+
+    def _compute_gate(self) -> float:
+        """Precision-weighted gate alpha_t from standardized surprise.
+
+        Uses the previous timestep's prediction error as surprise u_t,
+        standardized by online EMA mean/variance:
+        alpha_t = a_min + (a_max - a_min) * sigmoid(beta * zscore(u_t)).
+        Returns 0.5 (neutral) when gating is disabled or no history exists.
+        """
+        if not self.use_precision_gating or self._last_error is None:
+            return 0.5
+        u = (self._last_error ** 2).mean().item()
+        std = max(self.surprise_var, 1e-8) ** 0.5
+        zscore = (u - self.surprise_mean) / std
+        x = max(min(self.gate_beta * zscore, 30.0), -30.0)
+        gate = float(torch.sigmoid(torch.tensor(x)).item())
+        alpha = self.gate_alpha_min + (self.gate_alpha_max - self.gate_alpha_min) * gate
+        # Online EMA update of surprise statistics
+        lam = self.gate_ema
+        self.surprise_mean = (1.0 - lam) * self.surprise_mean + lam * u
+        self.surprise_var = (1.0 - lam) * self.surprise_var + lam * (u - self.surprise_mean) ** 2
+        return alpha
 
     def update_weights(self, s: torch.Tensor, a: torch.Tensor) -> dict:
         """
