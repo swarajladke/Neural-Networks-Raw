@@ -96,6 +96,16 @@ class PredictiveCell(nn.Module):
         eta_m: float = 0.1,
         max_latent_dim: int = 128,
         maturity_enabled: bool = True,
+        output_slice_start: Optional[int] = None,
+        use_softmax_output: bool = False,
+        use_fatigue: bool = False,
+        fatigue_decay: float = 0.9,
+        gamma_fatigue: float = 0.5,
+        use_precision_gating: bool = False,
+        gate_alpha_min: float = 0.2,
+        gate_alpha_max: float = 0.8,
+        gate_beta: float = 1.0,
+        gate_ema: float = 0.05,
     ):
         super().__init__()
 
@@ -120,6 +130,35 @@ class PredictiveCell(nn.Module):
         self.eta_m = eta_m
         self.max_latent_dim = max_latent_dim
         self.maturity_enabled = maturity_enabled
+
+        # ── Softmax output error geometry (cross-entropy gradient, local) ─────
+        # With use_softmax_output, the error on the target slice becomes
+        # e_y = y - softmax(D_y @ a): the exact CE gradient at the output.
+        # Prevents the Hebbian decoder from collapsing to the marginal
+        # symbol distribution E[y] under MSE on one-hot targets.
+        self.output_slice_start = output_slice_start
+        self.use_softmax_output = use_softmax_output
+
+        # ── Latent fatigue (adaptation trace; kWTA limit-cycle breaker) ──────
+        # f <- lambda_a * f + (1 - lambda_a) * 1[active]
+        # kWTA selection score = |a| - gamma_f * f
+        self.use_fatigue = use_fatigue
+        self.fatigue_decay = fatigue_decay
+        self.gamma_fatigue = gamma_fatigue
+        self.fatigue = torch.zeros(d_z)
+
+        # ── Precision-weighted E/R gating (Kalman-gain-like) ─────────────────
+        # alpha_t = a_min + (a_max - a_min) * sigmoid(beta * zscore(surprise))
+        # delta_z = 2*alpha*d_rec + d_fb + 2*(1-alpha)*rho*d_time + ...
+        # alpha = 0.5 exactly recovers the ungated dynamics.
+        self.use_precision_gating = use_precision_gating
+        self.gate_alpha_min = gate_alpha_min
+        self.gate_alpha_max = gate_alpha_max
+        self.gate_beta = gate_beta
+        self.gate_ema = gate_ema
+        self.surprise_mean = 0.0
+        self.surprise_var = 1.0
+        self.last_gate = 0.5
 
         # Neurogenesis state trackers (registered as PyTorch buffers for device/serialization safety)
         self.register_buffer("maturity", torch.ones(d_z))
