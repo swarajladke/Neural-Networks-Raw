@@ -112,6 +112,19 @@ class GenerationConfig:
 
 
 @dataclass
+class HierarchyConfig:
+    """Predictive hierarchy configuration (Phase 6)."""
+    enabled: bool = False
+    layer_dims: list = field(default_factory=lambda: [64, 32, 16])
+    k_sparse_per_layer: list = field(default_factory=lambda: [8, 4, 2])
+    commit_strides: list = field(default_factory=lambda: [1, 4, 16])
+    lambda_td: float = 0.3
+    n_settle: int = 10
+    learning_rate_decay: float = 0.1
+    max_units_per_layer: list = field(default_factory=lambda: [128, 48, 24])
+
+
+@dataclass
 class AGNISConfig:
     """Full Raw AGNIS experiment configuration."""
     experiment_name: str = "phase1_associative"
@@ -121,6 +134,7 @@ class AGNISConfig:
     training: TrainingConfig = field(default_factory=TrainingConfig)
     neurogenesis: NeurogenesisConfig = field(default_factory=NeurogenesisConfig)
     generation: GenerationConfig = field(default_factory=GenerationConfig)
+    hierarchy: HierarchyConfig = field(default_factory=HierarchyConfig)
     results_dir: str = "results/"
 
     def to_dict(self) -> Dict[str, Any]:
@@ -166,6 +180,8 @@ def load_config(path: str) -> AGNISConfig:
         config.neurogenesis = NeurogenesisConfig(**raw["neurogenesis"])
     if "generation" in raw:
         config.generation = GenerationConfig(**raw["generation"])
+    if "hierarchy" in raw:
+        config.hierarchy = HierarchyConfig(**raw["hierarchy"])
 
     return config
 
@@ -173,3 +189,7 @@ def load_config(path: str) -> AGNISConfig:
 def default_config() -> AGNISConfig:
     """Return the default configuration."""
     return AGNISConfig()
+
+
+# Alias for backward compatibility / convenience
+ExperimentConfig = AGNISConfig

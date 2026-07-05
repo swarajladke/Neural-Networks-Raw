@@ -108,3 +108,44 @@ class ActivationSelectivityProbe:
         """Mean selectivity score across all units."""
         sel = self.selectivity(task_a, task_b)
         return sel.mean().item()
+
+
+class WordBoundaryProbe:
+    """Linear probe testing whether z^l encodes word boundary (space) prediction.
+
+    Trains a simple ridge regression classifier on collected (z, is_space) pairs.
+    Higher accuracy at layer l means that layer has learned word-level structure.
+    This is the direct test that hierarchy produces abstract representations.
+    """
+
+    def __init__(self):
+        self._features: List[torch.Tensor] = []
+        self._labels: List[int] = []
+
+    def record(self, z: torch.Tensor, next_char_is_space: bool):
+        """Record a (latent_state, is_next_char_space) pair."""
+        self._features.append(z.detach().clone())
+        self._labels.append(1 if next_char_is_space else 0)
+
+    def evaluate(self) -> float:
+        """Train linear probe via ridge regression, return test accuracy."""
+        if len(self._features) < 20:
+            return 0.0
+        X = torch.stack(self._features)
+        y = torch.tensor(self._labels, dtype=torch.float32)
+        n = X.shape[0]
+        split = int(0.8 * n)
+        X_train, X_test = X[:split], X[split:]
+        y_train, y_test = y[:split], y[split:]
+        lam = 1.0
+        XtX = X_train.T @ X_train + lam * torch.eye(X_train.shape[1])
+        Xty = X_train.T @ y_train
+        w = torch.linalg.solve(XtX, Xty)
+        preds = (X_test @ w > 0.5).float()
+        accuracy = (preds == y_test).float().mean().item()
+        return accuracy
+
+    def reset(self):
+        """Clear all recorded features and labels."""
+        self._features.clear()
+        self._labels.clear()

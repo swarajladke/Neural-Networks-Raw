@@ -254,3 +254,164 @@ def normalize_weights(W: torch.Tensor, dim: int = 0, eps: float = 1e-8) -> torch
     """
     norms = W.norm(dim=dim, keepdim=True).clamp(min=eps)
     return W / norms
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Phase 6 — Per-layer Hebbian rules with vertical precision gating
+# ──────────────────────────────────────────────────────────────────────
+
+import math
+
+
+def compute_vertical_gate(
+    error_norm_sq: float,
+    precision_ema: float,
+    beta: float = 5.0,
+    theta: float = 1.5,
+) -> float:
+    """Vertical precision gate: g^l = sigmoid(beta * (|e^l|^2 / pi^l - theta)).
+
+    High surprise (large error relative to running precision) → gate ≈ 1 → learn.
+    Low surprise → gate ≈ 0 → protect existing weights.
+
+    Parameters
+    ----------
+    error_norm_sq : float
+        Squared norm of prediction error at layer l: |e^l|^2.
+    precision_ema : float
+        Running exponential moving average of |e^l|^2 (acts as expected precision).
+    beta : float
+        Steepness of the sigmoid gate.
+    theta : float
+        Threshold: gate fires when error/precision exceeds this.
+
+    Returns
+    -------
+    float
+        Gate value in (0, 1).
+    """
+    return 1.0 / (1.0 + math.exp(-beta * (error_norm_sq / (precision_ema + 1e-8) - theta)))
+
+
+def decoder_update(
+    e: torch.Tensor,
+    z_pre: torch.Tensor,
+    eta: float,
+    gate: float,
+) -> torch.Tensor:
+    """Per-layer gated decoder (generative) weight update.
+
+    ΔD^l = gate^l * η * outer(e^l, z^(l-1))
+
+    Parameters
+    ----------
+    e : torch.Tensor of shape (d_lower,)
+        Top-down prediction error at layer l.
+    z_pre : torch.Tensor of shape (d_upper,)
+        Pre-synaptic latent state from layer above.
+    eta : float
+        Decoder learning rate.
+    gate : float
+        Vertical precision gate value in (0, 1).
+
+    Returns
+    -------
+    torch.Tensor of shape (d_lower, d_upper)
+        Gated weight update. Add to D^l.
+    """
+    return gate * eta * torch.outer(e, z_pre)
+
+
+def encoder_update(
+    z_target: torch.Tensor,
+    z_predicted: torch.Tensor,
+    e_below: torch.Tensor,
+    eta: float,
+    gate: float,
+) -> torch.Tensor:
+    """Per-layer gated encoder (recognition) weight update.
+
+    ΔE^l = gate^l * η * outer(z_target^l - z_predicted^l, e^(l-1))
+
+    Parameters
+    ----------
+    z_target : torch.Tensor of shape (d_z,)
+        Post-settling target latent state at layer l.
+    z_predicted : torch.Tensor of shape (d_z,)
+        Encoder's prediction of z^l before settling.
+    e_below : torch.Tensor of shape (d_lower,)
+        Error signal from the layer below (bottom-up input).
+    eta : float
+        Encoder learning rate.
+    gate : float
+        Vertical precision gate value in (0, 1).
+
+    Returns
+    -------
+    torch.Tensor of shape (d_z, d_lower)
+        Gated weight update. Add to E^l.
+    """
+    recognition_error = z_target - z_predicted
+    return gate * eta * torch.outer(recognition_error, e_below)
+
+
+def recurrent_update(
+    z_t: torch.Tensor,
+    z_prev: torch.Tensor,
+    R: torch.Tensor,
+    eta: float,
+    gate: float,
+) -> torch.Tensor:
+    """Per-layer gated recurrent weight update.
+
+    ΔR^l = gate^l * η * outer(z^l_t - R^l @ z^l_{t-1}, z^l_{t-1})
+
+    Parameters
+    ----------
+    z_t : torch.Tensor of shape (d_z,)
+        Current latent state at layer l.
+    z_prev : torch.Tensor of shape (d_z,)
+        Previous latent state at layer l.
+    R : torch.Tensor of shape (d_z, d_z)
+        Current recurrent weight matrix at layer l.
+    eta : float
+        Recurrent learning rate.
+    gate : float
+        Vertical precision gate value in (0, 1).
+
+    Returns
+    -------
+    torch.Tensor of shape (d_z, d_z)
+        Gated weight update. Add to R^l.
+    """
+    temporal_error = z_t - R @ z_prev
+    return gate * eta * torch.outer(temporal_error, z_prev)
+
+
+def lateral_update(
+    z: torch.Tensor,
+    z_outer: torch.Tensor,
+) -> torch.Tensor:
+    """Földiák anti-Hebbian lateral update (decorrelation).
+
+    ΔL = outer(z, z_outer) - diag(z^2)
+
+    Anti-Hebbian: co-active units develop inhibitory lateral connections,
+    pushing sparse codes toward more decorrelated representations.
+
+    Parameters
+    ----------
+    z : torch.Tensor of shape (d_z,)
+        Current latent activation.
+    z_outer : torch.Tensor of shape (d_z,)
+        Outer product partner (typically same z, or a running average).
+
+    Returns
+    -------
+    torch.Tensor of shape (d_z, d_z)
+        Anti-Hebbian lateral weight update. Add to L.
+    """
+    delta_L = torch.outer(z, z_outer)
+    # Zero out diagonal (self-connections should not be modified)
+    delta_L.fill_diagonal_(0.0)
+    return delta_L

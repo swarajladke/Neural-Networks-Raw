@@ -7,10 +7,11 @@ Provides:
   - settle_z: standalone settling function (for use outside PredictiveCell)
   - settling_convergence: check whether z has converged
   - SettlingMonitor: tracks stability metrics across settling steps
+  - joint_settle: synchronous double-buffered settling for PredictiveHierarchy
 """
 
 import torch
-from typing import Tuple, Optional
+from typing import List, Tuple, Optional
 
 
 def settle_z(
@@ -181,3 +182,113 @@ class SettlingMonitor:
         final_errors = [h[-1] for h in self._histories if h]
         t = torch.tensor(final_errors)
         return t.var().item()
+
+
+
+def joint_settle(
+    z_list: List[torch.Tensor],
+    z_prev_list: List[torch.Tensor],
+    s: torch.Tensor,
+    E_list: List[torch.Tensor],
+    R_list: List[torch.Tensor],
+    L_list: List[torch.Tensor],
+    D_inter_list: List[torch.Tensor],
+    k_sparse_list: List[int],
+    committing: List[bool],
+    lambda_td: float = 0.3,
+    eta_z: float = 0.05,
+    n_settle: int = 10,
+    clip_val: float = 10.0,
+    bias_list: Optional[List[Optional[torch.Tensor]]] = None,
+) -> List[torch.Tensor]:
+    """
+    Synchronous double-buffered joint settling across all committing layers.
+
+    All committing layers update their z simultaneously in each micro-iteration.
+    Non-committing layers hold their current state (frozen during settling).
+    Uses double buffering: new z values are computed into a separate buffer,
+    then swapped after all layers are updated.
+
+    Parameters
+    ----------
+    z_list : list of torch.Tensor
+        Current latent states [z_0, ..., z_{N-1}].
+    z_prev_list : list of torch.Tensor
+        Previous latent states (for recurrent drive).
+    s : torch.Tensor of shape (d_input,)
+        Raw input stimulus.
+    E_list : list of torch.Tensor
+        Recognition matrices [E_0, ..., E_{N-1}].
+    R_list : list of torch.Tensor
+        Recurrent matrices [R_0, ..., R_{N-1}].
+    L_list : list of torch.Tensor
+        Lateral inhibition matrices [L_0, ..., L_{N-1}].
+    D_inter_list : list of torch.Tensor
+        Inter-layer decoder matrices [D_inter_0, ..., D_inter_{N-1}].
+        D_inter[l] has shape (dim_below_l, dim_l) and maps z^l to prediction
+        of the level below.
+    k_sparse_list : list of int
+        kWTA k values per layer.
+    committing : list of bool
+        Which layers are committing (updating) at this timestep.
+    lambda_td : float
+        Top-down conformity pressure strength.
+    eta_z : float
+        Settling step size.
+    n_settle : int
+        Number of settling micro-iterations.
+    clip_val : float
+        Clipping bound for z to prevent explosion.
+    bias_list : list of torch.Tensor or None
+        Optional fatigue bias tensors per layer.
+
+    Returns
+    -------
+    list of torch.Tensor
+        Settled latent states [z_0, ..., z_{N-1}].
+    """
+    from agnis.core.sparsity import kwta
+
+    n_layers = len(z_list)
+
+    # Clone the z values into a working buffer
+    z = [z_l.clone() for z_l in z_list]
+
+    for _ in range(n_settle):
+        # Double buffer: compute all new z values before swapping
+        z_new = [z_l.clone() for z_l in z]
+
+        for l in range(n_layers):
+            if not committing[l]:
+                continue  # non-committing layers hold state
+
+            # ── Bottom-up error (what this layer must explain from below) ──
+            if l == 0:
+                e_below = s - D_inter_list[0] @ z[0]
+            else:
+                e_below = z[l - 1] - D_inter_list[l] @ z[l]
+
+            # ── Top-down error (pressure to conform to prediction from above)
+            if l < n_layers - 1:
+                e_above = z[l] - D_inter_list[l + 1] @ z[l + 1]
+            else:
+                e_above = torch.zeros_like(z[l])
+
+            # ── Full drive ─────────────────────────────────────────────────
+            drive = (
+                E_list[l] @ e_below
+                - lambda_td * e_above
+                + R_list[l] @ z_prev_list[l]
+                - L_list[l] @ z[l]
+            )
+
+            z_candidate = z[l] + eta_z * drive
+            z_candidate = torch.clamp(z_candidate, -clip_val, clip_val)
+            bias = bias_list[l] if bias_list is not None else None
+            z_new[l] = kwta(z_candidate, k_sparse_list[l], bias=bias)
+
+        # Double-buffer swap: copy new values into z
+        z = z_new
+
+    return z
+

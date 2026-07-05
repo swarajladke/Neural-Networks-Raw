@@ -1,0 +1,85 @@
+# Phase 6 — Full Kaggle Sweep Configuration
+experiment_name: phase6_deep_kaggle
+phase: 6
+results_dir: results/phase6/
+
+hierarchy:
+  enabled: true
+  layer_dims: [64, 32, 16]
+  k_sparse_per_layer: [8, 4, 2]
+  commit_strides: [1, 4, 16]
+  lambda_td: 0.35
+  n_settle: 10
+  learning_rate_decay: 0.1
+  max_units_per_layer: [128, 48, 24]
+
+model:
+  d_z: 64
+  k_sparse: 7
+  n_settle: 15
+  eta_z: 0.03
+  eta_D: 0.005
+  eta_E: 0.005
+  eta_R: 0.003
+  rho: 0.5
+  lambda_lat: 0.1
+  lambda_sparse: 0.01
+  use_sparsity: true
+  use_recurrent: true
+  use_lateral: false
+  importance_decay: 0.005
+  use_softmax_output: true
+  use_fatigue: true
+  fatigue_decay: 0.9
+  gamma_fatigue: 0.5
+  use_precision_gating: true
+  gate_alpha_min: 0.2
+  gate_alpha_max: 0.8
+  gate_beta: 1.0
+  gate_ema: 0.05
+
+memory:
+  capacity: 1024
+  write_error_threshold: 0.15
+  write_novelty_threshold: 0.10
+  importance_decay: 0.999
+  min_similarity_to_skip_write: 0.95
+  replay_buffer_size: 512
+
+training:
+  n_tasks: 4
+  stories_per_domain: 100
+  train_chars_per_domain: 6000
+  eval_prompts_per_domain: 40
+  epochs_per_domain: 2
+  n_sleep_steps: 5
+  n_sleep_replay: 128
+  sleep_lr_scale: 0.2
+  importance_protect_threshold: 0.6
+  log_every: 200
+  seed: 42
+
+neurogenesis:
+  enabled: true
+  alpha: 1.0
+  beta: 0.5
+  gamma: 0.3
+  delta: 0.4
+  kappa: 0.3
+  lambda_cost: 0.01
+  threshold: 0.40
+  consecutive_n: 30
+  max_units: 256
+  prune_interval: 500
+  usage_threshold: 0.05
+  importance_threshold: 0.01
+  redundancy_threshold: 0.90
+  maturity_floor: 0.05
+
+generation:
+  max_chars: 200
+  decoding: sample
+  temperature: 0.7
+  top_k: 5
+  stop_on_double_newline: true
+  repetition_ngram_n: 3

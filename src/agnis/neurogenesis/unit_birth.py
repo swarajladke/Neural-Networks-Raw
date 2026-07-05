@@ -95,3 +95,81 @@ def birth_new_unit(
     L_new[:d_z, d_z][mask_col] = torch.empty(mask_col.sum()).uniform_(-0.2, 0.0)
 
     return D_new, E_new, R_new, L_new
+
+
+def birth_unit_in_hierarchy(
+    hierarchy,
+    l: int,
+    residual_error: torch.Tensor,
+    current_input: torch.Tensor,
+) -> Tuple[int, int]:
+    """
+    Birth a new unit in layer l of a PredictiveHierarchy.
+
+    Parameters
+    ----------
+    hierarchy : PredictiveHierarchy
+    l : int
+        Layer index where the new unit is born.
+    residual_error : torch.Tensor of shape (dim_below_l,)
+        Current bottom-up prediction error.
+    current_input : torch.Tensor of shape (dim_below_l,)
+        Current input to the encoder (raw input or error accum).
+
+    Returns
+    -------
+    tuple of (old_dim, new_dim)
+        Latent dimensions before and after growth.
+    """
+    E_l = hierarchy._E(l)
+    R_l = hierarchy._R(l)
+    L_l = hierarchy._L(l)
+    D_l = hierarchy._D_inter(l)
+    z_l = hierarchy._z(l)
+    z_prev_l = hierarchy._z_prev(l)
+
+    # Call single-layer birth logic to expand l's weight matrices
+    D_l_new, E_l_new, R_l_new, L_l_new = birth_new_unit(
+        D=D_l,
+        E=E_l,
+        R=R_l,
+        L=L_l,
+        residual_error=residual_error,
+        current_input=current_input,
+    )
+
+    # Update layer l's weight parameters
+    hierarchy._set_E(l, E_l_new)
+    hierarchy._set_D_inter(l, D_l_new)
+    hierarchy._set_R(l, R_l_new)
+    hierarchy._set_L(l, L_l_new)
+
+    # Expand state vectors
+    device = z_l.device
+    hierarchy._set_z(l, torch.cat([z_l, torch.zeros(1, device=device)]))
+    hierarchy._set_z_prev(l, torch.cat([z_prev_l, torch.zeros(1, device=device)]))
+
+    # Expand the layer above if it exists (layer l+1)
+    if l < hierarchy.n_layers - 1:
+        # D_inter_{l+1} predicts z_l from z_{l+1}
+        # It needs a new row of zeros at the end to match the new dimension of z_l
+        D_above = hierarchy._D_inter(l + 1)
+        new_row = torch.zeros(1, D_above.shape[1], device=D_above.device)
+        hierarchy._set_D_inter(l + 1, torch.cat([D_above, new_row], dim=0))
+
+        # E_{l+1} encodes z_l into z_{l+1}
+        # It needs a new column of zeros at the end
+        E_above = hierarchy._E(l + 1)
+        new_col = torch.zeros(E_above.shape[0], 1, device=E_above.device)
+        hierarchy._set_E(l + 1, torch.cat([E_above, new_col], dim=1))
+
+        # The error accumulator of layer l+1 needs a new element
+        accum = hierarchy._error_accum(l + 1)
+        hierarchy._set_error_accum(l + 1, torch.cat([accum, torch.zeros(1, device=accum.device)]))
+
+    old_dim = hierarchy.layer_dims[l]
+    hierarchy.layer_dims[l] += 1
+    new_dim = hierarchy.layer_dims[l]
+
+    return old_dim, new_dim
+

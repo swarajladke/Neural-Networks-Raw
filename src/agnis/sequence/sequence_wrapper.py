@@ -462,3 +462,239 @@ class TrigramBaseline(SequenceModel):
         total_contexts = len(self.counts)
         total_obs = sum(c.sum().item() for c in self.counts.values())
         return {"trigram_contexts": total_contexts, "total_observations": total_obs}
+
+
+class DeepSeqAgnisModel(SequenceModel):
+    """Sequence prediction wrapper for the multi-layer PredictiveHierarchy system (Phase 6)."""
+
+    def __init__(
+        self,
+        d_in: int,
+        d_out: int,
+        config: AGNISConfig,
+        use_recurrent: bool = True,
+        use_memory: bool = True,
+        use_replay: bool = True,
+    ):
+        from agnis.core.predictive_hierarchy import PredictiveHierarchy
+        from agnis.memory.fast_memory import FastMemory
+        from agnis.memory.replay_buffer import ReplayBuffer, LatentReplayBuffer
+        from agnis.training.sleep_trainer import SleepTrainer
+        from agnis.neurogenesis.growth_controller import GrowthController
+        from agnis.neurogenesis.routing import NoveltyAttributor
+        import math
+
+        self.d_in_x = d_in
+        self.d_out_y = d_out
+        self.use_memory = use_memory
+        self.use_replay = use_replay
+        self.step_counter = 0
+        self.current_task_id = 0
+        self.total_births = 0
+        self.total_prunes = 0
+        self.config = config
+
+        # 1. Initialize PredictiveHierarchy
+        self.hierarchy = PredictiveHierarchy(
+            d_input=d_in + d_out,
+            layer_dims=config.hierarchy.layer_dims,
+            k_sparse_per_layer=config.hierarchy.k_sparse_per_layer,
+            commit_strides=config.hierarchy.commit_strides,
+            lambda_td=config.hierarchy.lambda_td,
+            n_settle=config.hierarchy.n_settle,
+            eta_z=config.model.eta_z,
+            eta_d=config.model.eta_D,
+            eta_e=config.model.eta_E,
+            eta_r=config.model.eta_R,
+            lr_decay=config.hierarchy.learning_rate_decay,
+            use_precision_gating=config.model.use_precision_gating,
+            use_fatigue=config.model.use_fatigue,
+            fatigue_decay=config.model.fatigue_decay,
+            gamma_fatigue=config.model.gamma_fatigue,
+            importance_decay=config.model.importance_decay,
+        )
+
+        # 2. FastMemory and Replay buffers (layer 0 stimulus-level)
+        self.fast_mem = FastMemory(capacity=config.memory.capacity) if use_memory else None
+        self.replay_buffer = ReplayBuffer(max_size=config.memory.replay_buffer_size) if use_replay else None
+        self.latent_replay_buffer = LatentReplayBuffer(max_per_domain=64) if use_replay else None
+
+        # 3. Sleep Trainer
+        self.sleep_trainer = None
+        if use_replay:
+            self.sleep_trainer = SleepTrainer(
+                model=self.hierarchy,
+                fast_memory=self.fast_mem,
+                replay_buffer=self.replay_buffer,
+                sleep_lr_scale=config.training.sleep_lr_scale,
+                importance_protect_threshold=config.training.importance_protect_threshold,
+                latent_replay_buffer=self.latent_replay_buffer,
+            )
+
+        # 4. Neurogenesis Controllers
+        self.neurogenesis_enabled = config.neurogenesis.enabled
+        if self.neurogenesis_enabled:
+            self.gcs = [
+                GrowthController(
+                    alpha=config.neurogenesis.alpha,
+                    beta=config.neurogenesis.beta,
+                    gamma=config.neurogenesis.gamma,
+                    delta=config.neurogenesis.delta,
+                    kappa=config.neurogenesis.kappa,
+                    lambda_cost=config.neurogenesis.lambda_cost,
+                    threshold=config.neurogenesis.threshold,
+                    consecutive_n=config.neurogenesis.consecutive_n,
+                )
+                for _ in range(self.hierarchy.n_layers)
+            ]
+            self.routing = NoveltyAttributor(
+                n_layers=self.hierarchy.n_layers,
+                max_units_per_layer=config.hierarchy.max_units_per_layer,
+            )
+        else:
+            self.gcs = []
+            self.routing = None
+
+        self.last_retrieval_similarity = 0.5
+        self.observed_mask = torch.cat([torch.ones(d_in), torch.zeros(d_out)])
+
+    def reset_sequence_state(self):
+        self.hierarchy.reset_state()
+
+    def start_task(self, task_id: int):
+        self.current_task_id = task_id
+
+    def train_transition(self, x: torch.Tensor, y: torch.Tensor) -> Dict[str, Any]:
+        import math
+        self.step_counter += 1
+        s_joint = torch.cat([x, y])
+
+        # 1. Forward pass (settling)
+        z_settled = self.hierarchy.forward(s_joint, t=self.step_counter)
+
+        # 2. Compute prediction error
+        s_pred = self.hierarchy.get_output_prediction()
+        error_mse = ((s_joint - s_pred) ** 2).mean().item()
+
+        # 3. Memory write check
+        self.last_retrieval_similarity = 0.5
+        if self.use_memory and self.fast_mem is not None:
+            retrieved = self.fast_mem.retrieve(z_settled[0], update_importance=False)
+            if retrieved is not None:
+                _, sim, _ = retrieved
+                self.last_retrieval_similarity = sim
+            else:
+                self.last_retrieval_similarity = 0.0
+
+            # FastMemory.write internally checks novelty and error thresholds
+            self.fast_mem.write(
+                key=z_settled[0].detach().clone(),
+                value=s_joint.detach().clone(),
+                error_val=error_mse,
+                task_id=self.current_task_id
+            )
+
+        # 4. Weight update
+        metrics = self.hierarchy.update_all_weights(s_joint, t=self.step_counter)
+
+        # 5. Latent snapshot recording (every 8th step)
+        if self.use_replay and self.latent_replay_buffer is not None and self.step_counter % 8 == 0:
+            self.latent_replay_buffer.add(
+                self.current_task_id,
+                [self.hierarchy._z(l) for l in range(self.hierarchy.n_layers)]
+            )
+
+        # 6. Neurogenesis growth check
+        if self.neurogenesis_enabled:
+            per_layer_trigger = []
+            for l in range(self.hierarchy.n_layers):
+                current_capacity = self.hierarchy.layer_dims[l]
+                novelty = 1.0 - self.last_retrieval_similarity
+                error_l2 = math.sqrt(self.hierarchy.per_layer_prediction_error[l])
+
+                trigger = self.gcs[l].update(
+                    error=error_l2,
+                    novelty=novelty,
+                    uncertainty=0.0,
+                    interference=0.0,
+                    coverage=0.0,
+                    cost=float(current_capacity),
+                )
+                per_layer_trigger.append(trigger)
+
+            # Novelty routing decision
+            self.routing.update(self.hierarchy.per_layer_prediction_error)
+            target_layer = self.routing.route_growth(per_layer_trigger, self.hierarchy.layer_dims)
+            if target_layer >= 0:
+                # Find input/error for birth initialization
+                if target_layer == 0:
+                    current_input = s_joint
+                    residual_error = s_joint - s_pred
+                else:
+                    current_input = self.hierarchy._error_accum(target_layer - 1) / float(max(self.hierarchy._error_count(target_layer - 1).item(), 1))
+                    residual_error = self.hierarchy._compute_bottom_up_error(target_layer, s_joint)
+
+                self.hierarchy.grow_units(target_layer, current_input, residual_error)
+                self.total_births += 1
+                print(f"  [Hierarchy Neurogenesis] Birth at layer {target_layer}. Capacity: {self.hierarchy.layer_dims}")
+
+        return {"error": error_mse, **metrics}
+
+    def predict_transition(self, x: torch.Tensor) -> torch.Tensor:
+        # Construct joint query
+        zeros_target = torch.zeros(self.d_out_y, device=x.device)
+        s_query = torch.cat([x, zeros_target])
+
+        # Forward pass on query
+        _ = self.hierarchy.forward(s_query, t=self.step_counter)
+
+        # Get output prediction target slice
+        pred_joint = self.hierarchy.get_output_prediction()
+        pred_target = pred_joint[self.d_in_x:]
+
+        # Softmax normalized prediction
+        return torch.softmax(pred_target, dim=-1)
+
+    def predict_no_state_update(self, x: torch.Tensor) -> torch.Tensor:
+        # Save state backups
+        z_backups = [self.hierarchy._z(l).clone() for l in range(self.hierarchy.n_layers)]
+        z_prev_backups = [self.hierarchy._z_prev(l).clone() for l in range(self.hierarchy.n_layers)]
+        err_accum_backups = [self.hierarchy._error_accum(l).clone() for l in range(self.hierarchy.n_layers)]
+        err_count_backups = [self.hierarchy._error_count(l).clone() for l in range(self.hierarchy.n_layers)]
+
+        pred = self.predict_transition(x)
+
+        # Restore
+        for l in range(self.hierarchy.n_layers):
+            self.hierarchy._set_z(l, z_backups[l])
+            self.hierarchy._set_z_prev(l, z_prev_backups[l])
+            self.hierarchy._set_error_accum(l, err_accum_backups[l])
+            self.hierarchy._set_error_count(l, err_count_backups[l])
+
+        return pred
+
+    def advance_state_only(self, x: torch.Tensor, y: torch.Tensor):
+        s_joint = torch.cat([x, y])
+        _ = self.hierarchy.forward(s_joint, t=self.step_counter)
+
+    def sleep(self) -> Dict[str, Any]:
+        if self.use_replay and self.sleep_trainer is not None and self.fast_mem is not None:
+            self.replay_buffer.add_from_memory(self.fast_mem, n=self.config.training.n_sleep_replay)
+            errors = self.sleep_trainer.sleep(n_replay=self.config.training.n_sleep_replay, n_steps=self.config.training.n_sleep_steps)
+            if errors:
+                return {"sleep_start_error": errors[0], "sleep_end_error": errors[-1]}
+        return {}
+
+    def get_stats(self) -> Dict[str, Any]:
+        stats = {
+            "step": self.step_counter,
+            "layer_dims": list(self.hierarchy.layer_dims),
+            "total_births": self.total_births,
+            "total_prunes": self.total_prunes,
+        }
+        for l in range(self.hierarchy.n_layers):
+            stats[f"layer{l}/error"] = self.hierarchy.per_layer_prediction_error[l] if l < len(self.hierarchy.per_layer_errors) else 0.0
+            stats[f"layer{l}/usage_mean"] = self.hierarchy._usage(l).mean().item()
+            stats[f"layer{l}/maturity_mean"] = self.hierarchy._maturity(l).mean().item()
+        return stats
+
