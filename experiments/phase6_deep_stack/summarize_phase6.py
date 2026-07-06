@@ -110,14 +110,15 @@ def summarize_phase6_results(results_dir: str):
             # We look at the final task's evaluation
             if "probe_accuracies_after" in r and r["probe_accuracies_after"]:
                 final_eval_probes = r["probe_accuracies_after"][-1]
-                # Mean probe accuracy across eval domains
-                mean_probes = np.mean(final_eval_probes, axis=0)
-                if len(mean_probes) > 0:
-                    probe_l0.append(mean_probes[0])
-                if len(mean_probes) > 1:
-                    probe_l1.append(mean_probes[1])
-                if len(mean_probes) > 2:
-                    probe_l2.append(mean_probes[2])
+                if final_eval_probes:
+                    mean_probes = np.mean(final_eval_probes, axis=0)
+                    if isinstance(mean_probes, np.ndarray) and mean_probes.ndim > 0:
+                        if len(mean_probes) > 0:
+                            probe_l0.append(mean_probes[0])
+                        if len(mean_probes) > 1:
+                            probe_l1.append(mean_probes[1])
+                        if len(mean_probes) > 2:
+                            probe_l2.append(mean_probes[2])
 
         p0_mean = np.mean(probe_l0) if probe_l0 else 0.0
         p1_mean = np.mean(probe_l1) if probe_l1 else 0.0

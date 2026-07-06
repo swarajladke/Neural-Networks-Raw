@@ -631,8 +631,8 @@ class DeepSeqAgnisModel(SequenceModel):
                     current_input = s_joint
                     residual_error = s_joint - s_pred
                 else:
-                    current_input = self.hierarchy._error_accum(target_layer - 1) / float(max(self.hierarchy._error_count(target_layer - 1).item(), 1))
-                    residual_error = self.hierarchy._compute_bottom_up_error(target_layer, s_joint)
+                    current_input = self.hierarchy._compute_bottom_up_error(target_layer, s_joint)
+                    residual_error = current_input
 
                 self.hierarchy.grow_units(target_layer, current_input, residual_error)
                 self.total_births += 1
