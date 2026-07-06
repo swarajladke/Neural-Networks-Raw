@@ -144,14 +144,27 @@ class SleepTrainer:
 
             # 2. Inter-layer Latent Replay (hierarchy models only)
             if is_hierarchy and self.latent_replay_buffer is not None and self.latent_replay_buffer.size > 0:
+                def align_tensor(tensor: torch.Tensor, target_dim: int) -> torch.Tensor:
+                    curr_dim = tensor.shape[0]
+                    if curr_dim == target_dim:
+                        return tensor
+                    elif curr_dim < target_dim:
+                        return torch.cat([tensor, torch.zeros(target_dim - curr_dim, device=tensor.device)])
+                    else:
+                        return tensor[:target_dim]
+
                 latent_batch = self.latent_replay_buffer.sample(n_replay)
                 for latent_states in latent_batch:
                     for l in range(self.model.n_layers - 1):
-                        z_l = latent_states[l]
-                        z_above = latent_states[l + 1]
+                        D_inter = self.model._D_inter(l + 1)
+                        target_dim_below = D_inter.shape[0]
+                        target_dim_above = D_inter.shape[1]
+
+                        z_l = align_tensor(latent_states[l], target_dim_below)
+                        z_above = align_tensor(latent_states[l + 1], target_dim_above)
 
                         a_above = self.model._maturity(l + 1) * self.model.activation(z_above)
-                        e_latent = z_l - self.model._D_inter(l + 1) @ a_above
+                        e_latent = z_l - D_inter @ a_above
 
                         decay_factor = self.model.lr_decay ** (l + 1)
                         eta_sleep = self.model.eta_d * decay_factor * self.sleep_lr_scale
@@ -162,7 +175,7 @@ class SleepTrainer:
                         protect_mask = self.model._importance_D(l + 1) > self.importance_protect_threshold
                         delta_D_latent[protect_mask] = 0.0
 
-                        new_D = self.model._D_inter(l + 1) + delta_D_latent
+                        new_D = D_inter + delta_D_latent
                         self.model._set_D_inter(l + 1, new_D)
 
         return errors
