@@ -171,5 +171,9 @@ def birth_unit_in_hierarchy(
     hierarchy.layer_dims[l] += 1
     new_dim = hierarchy.layer_dims[l]
 
+    # Keep _dim_below in sync so reset_state() allocates correct sizes
+    if l + 1 < hierarchy.n_layers:
+        hierarchy._dim_below[l + 1] = new_dim
+
     return old_dim, new_dim
 

@@ -649,6 +649,10 @@ class PredictiveHierarchy(nn.Module):
             self.layer_dims[l] = len(keep_indices)
             self.k_sparse_per_layer[l] = min(self.k_sparse_per_layer[l], len(keep_indices))
 
+            # Keep _dim_below in sync so reset_state() allocates correct sizes
+            if l + 1 < self.n_layers:
+                self._dim_below[l + 1] = len(keep_indices)
+
     # ── State management ──────────────────────────────────────────────────
 
     def reset_state(self):

@@ -196,3 +196,37 @@ def test_deep_seq_agnis_model_training():
     sleep_out = model.sleep()
     # If sleep consolidates, should output start/end errors
     assert isinstance(sleep_out, dict)
+
+
+def test_dim_below_sync_after_growth():
+    """Regression: growing layer 1 then resetting state must not crash.
+
+    Before the fix, _dim_below was stale after grow_units, so
+    reset_state() would allocate error_accum(2) with the wrong size,
+    causing a RuntimeError on the next forward pass.
+    """
+    d_input = 24
+    layer_dims = [32, 16, 8]
+    k_sparse = [4, 2, 1]
+    commit_strides = [1, 2, 4]
+
+    h = PredictiveHierarchy(
+        d_input=d_input,
+        layer_dims=list(layer_dims),
+        k_sparse_per_layer=list(k_sparse),
+        commit_strides=commit_strides,
+        use_precision_gating=True,
+    )
+
+    x = torch.randn(d_input)
+    h.forward(x, t=0)
+
+    # Grow a unit at layer 1 (dim goes 16 -> 17)
+    residual = torch.randn(layer_dims[0])  # dim_below for layer 1
+    h.grow_units(1, residual, residual)
+    assert h.layer_dims[1] == layer_dims[1] + 1
+    assert h._dim_below[2] == layer_dims[1] + 1
+
+    # The critical sequence: reset then forward again
+    h.reset_state()
+    h.forward(x, t=1)  # would crash without _dim_below sync
