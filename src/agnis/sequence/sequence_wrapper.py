@@ -645,8 +645,8 @@ class DeepSeqAgnisModel(SequenceModel):
         zeros_target = torch.zeros(self.d_out_y, device=x.device)
         s_query = torch.cat([x, zeros_target])
 
-        # Forward pass on query
-        _ = self.hierarchy.forward(s_query, t=self.step_counter)
+        # Forward pass on query with observed mask
+        _ = self.hierarchy.forward(s_query, t=self.step_counter, observed_mask=self.observed_mask.to(x.device))
 
         # Get output prediction target slice
         pred_joint = self.hierarchy.get_output_prediction()

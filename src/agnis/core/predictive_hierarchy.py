@@ -281,7 +281,7 @@ class PredictiveHierarchy(nn.Module):
 
     # ── Core forward pass ─────────────────────────────────────────────────
 
-    def forward(self, s: torch.Tensor, t: int) -> List[torch.Tensor]:
+    def forward(self, s: torch.Tensor, t: int, observed_mask: Optional[torch.Tensor] = None) -> List[torch.Tensor]:
         """
         Two-stage forward pass through the hierarchy.
 
@@ -291,6 +291,8 @@ class PredictiveHierarchy(nn.Module):
             Raw input stimulus.
         t : int
             Current global timestep.
+        observed_mask : torch.Tensor, optional
+            Observed dimensions (1.0 for observed, 0.0 for unobserved).
 
         Returns
         -------
@@ -301,7 +303,7 @@ class PredictiveHierarchy(nn.Module):
         committing = [t % self.commit_strides[l] == 0 for l in range(self.n_layers)]
 
         # ── Accumulate bottom-up errors for non-committing layers ─────────
-        self._accumulate_errors(s)
+        self._accumulate_errors(s, observed_mask=observed_mask)
 
         # ── Stage A: Amortized feedforward initialization ─────────────────
         # For each committing layer, compute initial z from accumulated error
@@ -314,7 +316,7 @@ class PredictiveHierarchy(nn.Module):
             if error_count > 0:
                 error_input = self._error_accum(l) / float(error_count)
             else:
-                error_input = self._compute_bottom_up_error(l, s)
+                error_input = self._compute_bottom_up_error(l, s, observed_mask=observed_mask)
 
             # Save current z as z_prev before updating
             self._set_z_prev(l, self._z(l).clone())
@@ -357,6 +359,7 @@ class PredictiveHierarchy(nn.Module):
             eta_z=self.eta_z,
             n_settle=self.n_settle,
             bias_list=bias_list,
+            observed_mask=observed_mask,
         )
 
         # ── Store settled states ──────────────────────────────────────────
@@ -394,7 +397,12 @@ class PredictiveHierarchy(nn.Module):
 
     # ── Error computation helpers ─────────────────────────────────────────
 
-    def _compute_bottom_up_error(self, l: int, s: torch.Tensor) -> torch.Tensor:
+    def _compute_bottom_up_error(
+        self,
+        l: int,
+        s: torch.Tensor,
+        observed_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         """
         Compute bottom-up prediction error at layer l.
 
@@ -404,15 +412,18 @@ class PredictiveHierarchy(nn.Module):
         # Make sure target activation uses tanh nonlinearity and maturity
         if l == 0:
             pred = self._D_inter(0) @ (self._maturity(0) * self.activation(self._z(0)))
-            return s - pred
+            err = s - pred
+            if observed_mask is not None:
+                err = err * observed_mask
+            return err
         else:
             pred = self._D_inter(l) @ (self._maturity(l) * self.activation(self._z(l)))
             return self._z(l - 1) - pred
 
-    def _accumulate_errors(self, s: torch.Tensor):
+    def _accumulate_errors(self, s: torch.Tensor, observed_mask: Optional[torch.Tensor] = None):
         """Accumulate bottom-up errors as running sum for all layers."""
         for l in range(self.n_layers):
-            e = self._compute_bottom_up_error(l, s)
+            e = self._compute_bottom_up_error(l, s, observed_mask=observed_mask)
             self._set_error_accum(l, self._error_accum(l) + e)
             self._set_error_count(l, self._error_count(l) + 1)
 

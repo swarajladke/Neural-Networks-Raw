@@ -200,6 +200,7 @@ def joint_settle(
     n_settle: int = 10,
     clip_val: float = 10.0,
     bias_list: Optional[List[Optional[torch.Tensor]]] = None,
+    observed_mask: Optional[torch.Tensor] = None,
 ) -> List[torch.Tensor]:
     """
     Synchronous double-buffered joint settling across all committing layers.
@@ -265,6 +266,8 @@ def joint_settle(
             # ── Bottom-up error (what this layer must explain from below) ──
             if l == 0:
                 e_below = s - D_inter_list[0] @ z[0]
+                if observed_mask is not None:
+                    e_below = e_below * observed_mask
             else:
                 e_below = z[l - 1] - D_inter_list[l] @ z[l]
 

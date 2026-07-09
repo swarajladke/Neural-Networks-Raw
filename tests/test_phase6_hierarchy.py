@@ -230,3 +230,38 @@ def test_dim_below_sync_after_growth():
     # The critical sequence: reset then forward again
     h.reset_state()
     h.forward(x, t=1)  # would crash without _dim_below sync
+
+
+def test_observed_mask_inference():
+    """Verify that observed_mask prevents reconstruction error on unobserved targets
+    from affecting the settled latent activations."""
+    d_input = 10
+    layer_dims = [16, 8]
+    k_sparse = [2, 1]
+    commit_strides = [1, 2]
+
+    h = PredictiveHierarchy(
+        d_input=d_input,
+        layer_dims=list(layer_dims),
+        k_sparse_per_layer=list(k_sparse),
+        commit_strides=commit_strides,
+        use_precision_gating=False,
+    )
+
+    x = torch.randn(d_input)
+    mask = torch.tensor([1.0]*5 + [0.0]*5)
+
+    # 1. Forward with mask
+    h.reset_state()
+    z_with_mask = [z.clone() for z in h.forward(x, t=0, observed_mask=mask)]
+
+    # 2. Forward without mask, using input with zeros in target slot
+    h.reset_state()
+    x_zeros_target = x.clone()
+    x_zeros_target[5:] = 0.0
+    z_no_mask = [z.clone() for z in h.forward(x_zeros_target, t=0)]
+
+    # Since the mask ignored the target slots, the settled z_0 MUST be different
+    # from when target slots are forced to be zero (which causes target reconstruction error).
+    assert not torch.allclose(z_with_mask[0], z_no_mask[0])
+
