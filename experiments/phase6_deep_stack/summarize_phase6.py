@@ -83,10 +83,10 @@ def summarize_phase6_results(results_dir: str):
     md_report += "Auto-generated summary report of all completed deep hierarchical sweep configurations.\n\n"
     
     md_report += (
-        "| Model | Seeds | Cont Acc | Peak Acc | Retained Acc | FWT | Acc Forg | BPC Forg | "
+        "| Model | Seeds | Cont Acc | Cont BPC | Peak Acc | Retained Acc | FWT | Acc Forg | BPC Forg | "
         "Probe L0 | Probe L1 | Probe L2 | Rep Rate | Dist-2 | Dist-3 | Final Dims | Births | Prunes | Runtime |\n"
     )
-    md_report += "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n"
+    md_report += "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n"
 
     for model in sorted(raw_data.keys()):
         runs = raw_data[model]
@@ -201,8 +201,8 @@ def summarize_phase6_results(results_dir: str):
 
         md_report += (
             f"| `{model}` | {seeds_count} | "
-            f"{acc_mean:.3f}±{acc_std:.3f} | {peak_mean:.3f}±{peak_std:.3f} | "
-            f"{retained_mean:.3f}±{retained_std:.3f} | {fwt_mean:.3f}±{fwt_std:.3f} | "
+            f"{acc_mean:.3f}±{acc_std:.3f} | {bpc_mean:.3f}±{bpc_std:.3f} | "
+            f"{peak_mean:.3f}±{peak_std:.3f} | {retained_mean:.3f}±{retained_std:.3f} | {fwt_mean:.3f}±{fwt_std:.3f} | "
             f"{acc_forg_mean:.3f}±{acc_forg_std:.3f} | {bpc_forg_mean:.3f}±{bpc_forg_std:.3f} | "
             f"{p0_str} | {p1_str} | {p2_str} | "
             f"{rep_mean:.1%} | {dist2_mean:.1%} | {dist3_mean:.1%} | "
