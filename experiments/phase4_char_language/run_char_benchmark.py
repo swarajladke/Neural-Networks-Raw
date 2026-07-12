@@ -20,7 +20,10 @@ import torch
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'src')))
 
 from agnis.text import CharVocab, CharacterStream, CharMetrics, get_all_domains
-from agnis.text.char_metrics import compute_forgetting, compute_bpc_forgetting, compute_growth_efficiency
+from agnis.text.char_metrics import (
+    compute_forgetting, compute_bpc_forgetting, compute_growth_efficiency,
+    summarize_learning_vs_forgetting,
+)
 from agnis.sequence.sequence_wrapper import (
     SeqAgnisModel, SimpleRNNBaseline, BigramBaseline, TrigramBaseline
 )
@@ -279,6 +282,13 @@ def main():
     # Calculate forgetting
     forgetting = compute_forgetting(accuracy_matrix_after)
     bpc_forgetting = compute_bpc_forgetting(bpc_matrix_after)
+
+    # Learning-vs-retention summary. Forgetting alone is confounded: a model
+    # that never learns has nothing to lose. Report peak/retained/forward
+    # transfer against the random floor (1/vocab) so low forgetting only counts
+    # when the model actually learned the domains.
+    random_acc = 1.0 / d_symbol
+    lvf = summarize_learning_vs_forgetting(accuracy_matrix_after, random_accuracy=random_acc)
     
     final_row_acc = accuracy_matrix_after[-1]
     final_row_bpc = bpc_matrix_after[-1]
@@ -343,6 +353,11 @@ def main():
         "final_average_bpc": mean_final_bpc,
         "average_accuracy_forgetting": mean_forgetting_acc,
         "average_bpc_forgetting": mean_forgetting_bpc,
+        "random_accuracy": random_acc,
+        "mean_peak_accuracy": lvf["mean_peak_accuracy"],
+        "mean_retained_accuracy": lvf["mean_retained_accuracy"],
+        "mean_forward_transfer": lvf["mean_forward_transfer"],
+        "learning_headroom": lvf["learning_headroom"],
         "total_units_born": total_births,
         "total_units_pruned": total_prunes,
         "growth_efficiency_acc_per_unit": efficiency_acc,

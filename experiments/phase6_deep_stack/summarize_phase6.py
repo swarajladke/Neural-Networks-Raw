@@ -14,6 +14,8 @@ from collections import defaultdict
 # Add directory paths
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
+from agnis.text.char_metrics import compute_retained_accuracy, compute_peak_accuracy, compute_forward_transfer
+
 
 def summarize_phase6_results(results_dir: str):
     """Aggregate all seed files under results/phase6/ and print summaries."""
@@ -53,6 +55,12 @@ def summarize_phase6_results(results_dir: str):
         "Cont_Accuracy_Std",
         "Cont_BPC_Mean",
         "Cont_BPC_Std",
+        "Peak_Accuracy_Mean",
+        "Peak_Accuracy_Std",
+        "Retained_Accuracy_Mean",
+        "Retained_Accuracy_Std",
+        "Forward_Transfer_Mean",
+        "Forward_Transfer_Std",
         "Cont_Acc_Forgetting_Mean",
         "Cont_Acc_Forgetting_Std",
         "Cont_BPC_Forgetting_Mean",
@@ -75,10 +83,10 @@ def summarize_phase6_results(results_dir: str):
     md_report += "Auto-generated summary report of all completed deep hierarchical sweep configurations.\n\n"
     
     md_report += (
-        "| Model | Seeds | Cont Acc (mean±std) | Cont BPC (mean±std) | Acc Forg | BPC Forg | "
+        "| Model | Seeds | Cont Acc | Peak Acc | Retained Acc | FWT | Acc Forg | BPC Forg | "
         "Probe L0 | Probe L1 | Probe L2 | Rep Rate | Dist-2 | Dist-3 | Final Dims | Births | Prunes | Runtime |\n"
     )
-    md_report += "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n"
+    md_report += "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n"
 
     for model in sorted(raw_data.keys()):
         runs = raw_data[model]
@@ -91,6 +99,34 @@ def summarize_phase6_results(results_dir: str):
         acc_forgs = [sum(r["forgetting"]) / len(r["forgetting"]) if r["forgetting"] else 0.0 for r in runs]
         bpc_forgs = [sum(r["bpc_forgetting"]) / len(r["bpc_forgetting"]) if r["bpc_forgetting"] else 0.0 for r in runs]
         
+        # Calculate peak, retained, and FWT from matrices
+        peak_list = []
+        retained_list = []
+        fwt_list = []
+
+        for r in runs:
+            matrix = r.get("accuracy_matrix_after", [])
+            random_acc = r.get("random_accuracy", 1.0 / 50.0)
+            if matrix:
+                peaks = compute_peak_accuracy(matrix)
+                retained = compute_retained_accuracy(matrix)
+                fwt = compute_forward_transfer(matrix, random_accuracy=random_acc)
+                
+                peak_list.append(np.mean(peaks))
+                retained_list.append(np.mean(retained))
+                if fwt:
+                    fwt_list.append(np.mean(fwt))
+                else:
+                    fwt_list.append(0.0)
+            else:
+                peak_list.append(r.get("mean_peak_accuracy", r["average_accuracy_after"]))
+                retained_list.append(r.get("mean_retained_accuracy", r["average_accuracy_after"]))
+                fwt_list.append(r.get("mean_forward_transfer", 0.0))
+
+        peak_mean, peak_std = np.mean(peak_list), np.std(peak_list)
+        retained_mean, retained_std = np.mean(retained_list), np.std(retained_list)
+        fwt_mean, fwt_std = np.mean(fwt_list), np.std(fwt_list)
+
         rep_rates = [r.get("repetition_rate_mean", 0.0) for r in runs]
         dist2 = [r.get("distinct_2_mean", 0.0) for r in runs]
         dist3 = [r.get("distinct_3_mean", 0.0) for r in runs]
@@ -106,8 +142,6 @@ def summarize_phase6_results(results_dir: str):
         # Probe accuracy per layer
         probe_l0, probe_l1, probe_l2 = [], [], []
         for r in runs:
-            # probe_accuracies_after shape: [task, eval, layer]
-            # We look at the final task's evaluation
             if "probe_accuracies_after" in r and r["probe_accuracies_after"]:
                 final_eval_probes = r["probe_accuracies_after"][-1]
                 if final_eval_probes:
@@ -143,6 +177,9 @@ def summarize_phase6_results(results_dir: str):
             seeds_count,
             acc_mean, acc_std,
             bpc_mean, bpc_std,
+            peak_mean, peak_std,
+            retained_mean, retained_std,
+            fwt_mean, fwt_std,
             acc_forg_mean, acc_forg_std,
             bpc_forg_mean, bpc_forg_std,
             p0_mean,
@@ -164,12 +201,35 @@ def summarize_phase6_results(results_dir: str):
 
         md_report += (
             f"| `{model}` | {seeds_count} | "
-            f"{acc_mean:.3f}±{acc_std:.3f} | {bpc_mean:.3f}±{bpc_std:.3f} | "
+            f"{acc_mean:.3f}±{acc_std:.3f} | {peak_mean:.3f}±{peak_std:.3f} | "
+            f"{retained_mean:.3f}±{retained_std:.3f} | {fwt_mean:.3f}±{fwt_std:.3f} | "
             f"{acc_forg_mean:.3f}±{acc_forg_std:.3f} | {bpc_forg_mean:.3f}±{bpc_forg_std:.3f} | "
             f"{p0_str} | {p1_str} | {p2_str} | "
             f"{rep_mean:.1%} | {dist2_mean:.1%} | {dist3_mean:.1%} | "
             f"`{dims_str}` | {birth_mean:.1f} | {prune_mean:.1f} | {runtime_mean:.1f}s |\n"
         )
+
+    # Perform significance testing relative to deep_agnis_3L_neurogenesis if it exists
+    target_model = "deep_agnis_3L_neurogenesis"
+    if target_model in raw_data:
+        target_runs = raw_data[target_model]
+        target_accs = [r["average_accuracy_after"] for r in target_runs]
+        
+        md_report += "\n## Statistical Significance Tests (relative to `deep_agnis_3L_neurogenesis` Accuracy)\n\n"
+        md_report += "| Comparison Model | p-value (t-test) | Significant (p < 0.05)? |\n"
+        md_report += "|---|---|---|\n"
+        
+        from scipy import stats
+        for model in sorted(raw_data.keys()):
+            if model == target_model:
+                continue
+            model_runs = raw_data[model]
+            model_accs = [r["average_accuracy_after"] for r in model_runs]
+            
+            if len(model_accs) > 1 and len(target_accs) > 1:
+                t_stat, p_val = stats.ttest_ind(target_accs, model_accs, equal_var=False)
+                sig = "Yes" if p_val < 0.05 else "No"
+                md_report += f"| `{model}` | {p_val:.4f} | {sig} |\n"
 
     # Write Markdown
     with open(md_path, "w") as f:

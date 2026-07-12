@@ -29,7 +29,10 @@ from agnis.text.generation_metrics import (
     compute_sentence_completion,
     compute_distinct_n
 )
-from agnis.text.char_metrics import compute_forgetting, compute_bpc_forgetting, compute_growth_efficiency
+from agnis.text.char_metrics import (
+    compute_forgetting, compute_bpc_forgetting, compute_growth_efficiency,
+    summarize_learning_vs_forgetting,
+)
 from agnis.sequence.sequence_wrapper import (
     SeqAgnisModel, DeepSeqAgnisModel, SimpleRNNBaseline, SimpleGRUBaseline, BigramBaseline, TrigramBaseline
 )
@@ -418,10 +421,17 @@ def main():
     avg_forgetting = sum(forgetting) / len(forgetting) if forgetting else 0.0
     avg_bpc_forgetting = sum(bpc_forgetting) / len(bpc_forgetting) if bpc_forgetting else 0.0
 
+    # Learning-vs-retention summary
+    random_acc = 1.0 / d_symbol
+    lvf = summarize_learning_vs_forgetting(accuracy_matrix_after, random_accuracy=random_acc)
+
     print(f"[Phase6] Final average accuracy: {avg_acc_after:.4f}")
     print(f"[Phase6] Final average BPC: {avg_bpc_after:.4f}")
     print(f"[Phase6] Average forgetting: {avg_forgetting:.4f}")
     print(f"[Phase6] Average BPC forgetting: {avg_bpc_forgetting:.4f}")
+    print(f"[Phase6] Mean peak accuracy: {lvf['mean_peak_accuracy']:.4f}")
+    print(f"[Phase6] Mean retained accuracy: {lvf['mean_retained_accuracy']:.4f}")
+    print(f"[Phase6] Mean forward transfer: {lvf['mean_forward_transfer']:.4f}")
 
     # Build results dictionary
     results = {
@@ -441,6 +451,11 @@ def main():
         "bpc_forgetting": bpc_forgetting,
         "average_forgetting": avg_forgetting,
         "average_bpc_forgetting": avg_bpc_forgetting,
+        "random_accuracy": random_acc,
+        "mean_peak_accuracy": lvf["mean_peak_accuracy"],
+        "mean_retained_accuracy": lvf["mean_retained_accuracy"],
+        "mean_forward_transfer": lvf["mean_forward_transfer"],
+        "learning_headroom": lvf["learning_headroom"],
         "repetition_rate_mean": sum(repetition_rates) / max(len(repetition_rates), 1),
         "distinct_2_mean": sum(distinct_2_rates) / max(len(distinct_2_rates), 1),
         "distinct_3_mean": sum(distinct_3_rates) / max(len(distinct_3_rates), 1),
