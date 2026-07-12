@@ -337,6 +337,8 @@ class RNNReplayBaseline(SimpleRNNBaseline):
             
             loss = loss / (len(seq) - 1)
             loss.backward()
+            # Gradient clipping to avoid exploding gradients during sleep BPTT
+            torch.nn.utils.clip_grad_norm_(list(self.rnn.parameters()) + list(self.fc.parameters()), max_norm=2.0)
             self.optimizer.step()
             losses.append(loss.item())
 
@@ -402,6 +404,8 @@ class GRUReplayBaseline(SimpleGRUBaseline):
             
             loss = loss / (len(seq) - 1)
             loss.backward()
+            # Gradient clipping to avoid exploding gradients during sleep BPTT
+            torch.nn.utils.clip_grad_norm_(list(self.rnn.parameters()) + list(self.fc.parameters()), max_norm=2.0)
             self.optimizer.step()
             losses.append(loss.item())
 
@@ -457,6 +461,8 @@ class RNNEWCBaseline(SimpleRNNBaseline):
                     
         total_loss = loss + (self.ewc_lambda / 2.0) * ewc_penalty
         total_loss.backward()
+        # Gradient clipping to avoid exploding gradients due to EWC penalty scale
+        torch.nn.utils.clip_grad_norm_(list(self.rnn.parameters()) + list(self.fc.parameters()), max_norm=2.0)
         self.optimizer.step()
         self.h = self.h.detach()
         
@@ -506,6 +512,8 @@ class RNNEWCBaseline(SimpleRNNBaseline):
                 
             loss = loss / (len(seq) - 1)
             loss.backward()
+            # Gradient clipping to avoid exploding gradients during Fisher estimation BPTT
+            torch.nn.utils.clip_grad_norm_(list(self.rnn.parameters()) + list(self.fc.parameters()), max_norm=2.0)
             
             for name, param in self.rnn.named_parameters():
                 if param.grad is not None:
@@ -566,6 +574,8 @@ class GRUEWCBaseline(SimpleGRUBaseline):
                     
         total_loss = loss + (self.ewc_lambda / 2.0) * ewc_penalty
         total_loss.backward()
+        # Gradient clipping to avoid exploding gradients due to EWC penalty scale
+        torch.nn.utils.clip_grad_norm_(list(self.rnn.parameters()) + list(self.fc.parameters()), max_norm=2.0)
         self.optimizer.step()
         self.h = self.h.detach()
         
@@ -614,6 +624,8 @@ class GRUEWCBaseline(SimpleGRUBaseline):
                 
             loss = loss / (len(seq) - 1)
             loss.backward()
+            # Gradient clipping to avoid exploding gradients during Fisher estimation BPTT
+            torch.nn.utils.clip_grad_norm_(list(self.rnn.parameters()) + list(self.fc.parameters()), max_norm=2.0)
             
             for name, param in self.rnn.named_parameters():
                 if param.grad is not None:
