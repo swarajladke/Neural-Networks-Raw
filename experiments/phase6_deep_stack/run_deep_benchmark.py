@@ -34,7 +34,9 @@ from agnis.text.char_metrics import (
     summarize_learning_vs_forgetting,
 )
 from agnis.sequence.sequence_wrapper import (
-    SeqAgnisModel, DeepSeqAgnisModel, SimpleRNNBaseline, SimpleGRUBaseline, BigramBaseline, TrigramBaseline
+    SeqAgnisModel, DeepSeqAgnisModel, SimpleRNNBaseline, SimpleGRUBaseline,
+    RNNReplayBaseline, GRUReplayBaseline, RNNEWCBaseline, GRUEWCBaseline,
+    BigramBaseline, TrigramBaseline
 )
 from agnis.evaluation.probes import WordBoundaryProbe
 from agnis.utils.config import load_config, AGNISConfig
@@ -43,7 +45,8 @@ from agnis.utils.config import load_config, AGNISConfig
 def main():
     parser = argparse.ArgumentParser(description="Run Phase 6 Deep AGNIS Benchmark")
     parser.add_argument("--model", type=str, required=True,
-                        choices=['gru_baseline', 'rnn_baseline', 'seq_agnis_flat_wide',
+                        choices=['gru_baseline', 'rnn_baseline', 'rnn_replay_baseline', 'gru_replay_baseline',
+                                 'rnn_ewc_baseline', 'gru_ewc_baseline', 'seq_agnis_flat_wide',
                                  'deep_agnis_2L', 'deep_agnis_3L', 'deep_agnis_3L_neurogenesis'],
                         help="Model variant to evaluate")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
@@ -153,6 +156,14 @@ def main():
         model = SimpleRNNBaseline(d_in=d_symbol, d_out=d_symbol, d_hidden=config.model.d_z)
     elif model_key == 'gru_baseline':
         model = SimpleGRUBaseline(d_in=d_symbol, d_out=d_symbol, d_hidden=config.model.d_z)
+    elif model_key == 'rnn_replay_baseline':
+        model = RNNReplayBaseline(d_in=d_symbol, d_out=d_symbol, d_hidden=config.model.d_z, sleep_lr_scale=config.training.sleep_lr_scale)
+    elif model_key == 'gru_replay_baseline':
+        model = GRUReplayBaseline(d_in=d_symbol, d_out=d_symbol, d_hidden=config.model.d_z, sleep_lr_scale=config.training.sleep_lr_scale)
+    elif model_key == 'rnn_ewc_baseline':
+        model = RNNEWCBaseline(d_in=d_symbol, d_out=d_symbol, d_hidden=config.model.d_z, ewc_lambda=100.0)
+    elif model_key == 'gru_ewc_baseline':
+        model = GRUEWCBaseline(d_in=d_symbol, d_out=d_symbol, d_hidden=config.model.d_z, ewc_lambda=100.0)
     else:
         raise ValueError(f"Unknown model variant: {model_key}")
 

@@ -281,6 +281,353 @@ class SimpleGRUBaseline(SequenceModel):
             self.h = self.rnn(x_in, self.h).detach()
 
 
+class RNNReplayBaseline(SimpleRNNBaseline):
+    """RNN baseline with Sleep Replay Buffer (experience replay)."""
+
+    def __init__(self, d_in: int, d_out: int, d_hidden: int = 32, lr: float = 0.01, sleep_lr_scale: float = 0.3):
+        super().__init__(d_in, d_out, d_hidden, lr)
+        self.use_replay = True
+        self.replay_buffer = []
+        self.max_buffer_size = 128
+        self.current_sequence = []
+        self.sleep_lr_scale = sleep_lr_scale
+
+    def reset_sequence_state(self):
+        super().reset_sequence_state()
+        if self.current_sequence:
+            import random
+            if len(self.replay_buffer) < self.max_buffer_size:
+                self.replay_buffer.append(self.current_sequence)
+            else:
+                idx = random.randint(0, len(self.replay_buffer))
+                if idx < self.max_buffer_size:
+                    self.replay_buffer[idx] = self.current_sequence
+            self.current_sequence = []
+
+    def train_transition(self, x: torch.Tensor, y: torch.Tensor) -> Dict[str, Any]:
+        self.current_sequence.append(x.argmax().item())
+        return super().train_transition(x, y)
+
+    def sleep(self) -> Dict[str, Any]:
+        if not self.replay_buffer:
+            return {}
+        import random
+        
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] *= self.sleep_lr_scale
+
+        losses = []
+        n_sleep_steps = 30
+        for _ in range(n_sleep_steps):
+            seq = random.choice(self.replay_buffer)
+            if len(seq) < 2:
+                continue
+            
+            self.optimizer.zero_grad()
+            h = torch.zeros(1, self.d_hidden, device=self.h.device)
+            loss = 0.0
+            for t in range(len(seq) - 1):
+                x_t = torch.zeros(self.d_in, device=self.h.device)
+                x_t[seq[t]] = 1.0
+                x_in = x_t.unsqueeze(0)
+                h = self.rnn(x_in, h)
+                logits = self.fc(h)
+                target = torch.tensor([seq[t+1]], device=self.h.device)
+                loss += self.loss_fn(logits, target)
+            
+            loss = loss / (len(seq) - 1)
+            loss.backward()
+            self.optimizer.step()
+            losses.append(loss.item())
+
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] /= self.sleep_lr_scale
+
+        return {"sleep_mean_loss": sum(losses) / len(losses) if losses else 0.0}
+
+
+class GRUReplayBaseline(SimpleGRUBaseline):
+    """GRU baseline with Sleep Replay Buffer (experience replay)."""
+
+    def __init__(self, d_in: int, d_out: int, d_hidden: int = 32, lr: float = 0.01, sleep_lr_scale: float = 0.3):
+        super().__init__(d_in, d_out, d_hidden, lr)
+        self.use_replay = True
+        self.replay_buffer = []
+        self.max_buffer_size = 128
+        self.current_sequence = []
+        self.sleep_lr_scale = sleep_lr_scale
+
+    def reset_sequence_state(self):
+        super().reset_sequence_state()
+        if self.current_sequence:
+            import random
+            if len(self.replay_buffer) < self.max_buffer_size:
+                self.replay_buffer.append(self.current_sequence)
+            else:
+                idx = random.randint(0, len(self.replay_buffer))
+                if idx < self.max_buffer_size:
+                    self.replay_buffer[idx] = self.current_sequence
+            self.current_sequence = []
+
+    def train_transition(self, x: torch.Tensor, y: torch.Tensor) -> Dict[str, Any]:
+        self.current_sequence.append(x.argmax().item())
+        return super().train_transition(x, y)
+
+    def sleep(self) -> Dict[str, Any]:
+        if not self.replay_buffer:
+            return {}
+        import random
+        
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] *= self.sleep_lr_scale
+
+        losses = []
+        n_sleep_steps = 30
+        for _ in range(n_sleep_steps):
+            seq = random.choice(self.replay_buffer)
+            if len(seq) < 2:
+                continue
+            
+            self.optimizer.zero_grad()
+            h = torch.zeros(1, self.d_hidden, device=self.h.device)
+            loss = 0.0
+            for t in range(len(seq) - 1):
+                x_t = torch.zeros(self.d_in, device=self.h.device)
+                x_t[seq[t]] = 1.0
+                x_in = x_t.unsqueeze(0)
+                h = self.rnn(x_in, h)
+                logits = self.fc(h)
+                target = torch.tensor([seq[t+1]], device=self.h.device)
+                loss += self.loss_fn(logits, target)
+            
+            loss = loss / (len(seq) - 1)
+            loss.backward()
+            self.optimizer.step()
+            losses.append(loss.item())
+
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] /= self.sleep_lr_scale
+
+        return {"sleep_mean_loss": sum(losses) / len(losses) if losses else 0.0}
+
+
+class RNNEWCBaseline(SimpleRNNBaseline):
+    """RNN baseline with Elastic Weight Consolidation (EWC)."""
+
+    def __init__(self, d_in: int, d_out: int, d_hidden: int = 32, lr: float = 0.01, ewc_lambda: float = 100.0):
+        super().__init__(d_in, d_out, d_hidden, lr)
+        self.ewc_lambda = ewc_lambda
+        self.task_optimal_params = []
+        self.fishers = []
+        self.current_task_sequences = []
+        self.current_sequence = []
+
+    def reset_sequence_state(self):
+        super().reset_sequence_state()
+        if self.current_sequence:
+            self.current_task_sequences.append(self.current_sequence)
+            self.current_sequence = []
+
+    def train_transition(self, x: torch.Tensor, y: torch.Tensor) -> Dict[str, Any]:
+        self.current_sequence.append(x.argmax().item())
+        
+        self.optimizer.zero_grad()
+        x_in = x.unsqueeze(0)
+        self.h = self.rnn(x_in, self.h)
+        logits = self.fc(self.h)
+        target = y.argmax().unsqueeze(0)
+        
+        loss = self.loss_fn(logits, target)
+        
+        # Calculate EWC penalty
+        ewc_penalty = torch.tensor(0.0, device=x.device)
+        for task_idx in range(len(self.task_optimal_params)):
+            opt_params = self.task_optimal_params[task_idx]
+            fisher = self.fishers[task_idx]
+            # Accumulate RNN parameters
+            for name, param in self.rnn.named_parameters():
+                key = f"rnn.{name}"
+                if key in opt_params and key in fisher:
+                    ewc_penalty += (fisher[key] * (param - opt_params[key]) ** 2).sum()
+            # Accumulate FC parameters
+            for name, param in self.fc.named_parameters():
+                key = f"fc.{name}"
+                if key in opt_params and key in fisher:
+                    ewc_penalty += (fisher[key] * (param - opt_params[key]) ** 2).sum()
+                    
+        total_loss = loss + (self.ewc_lambda / 2.0) * ewc_penalty
+        total_loss.backward()
+        self.optimizer.step()
+        self.h = self.h.detach()
+        
+        return {"error": loss.item(), "ewc_penalty": ewc_penalty.item()}
+
+    def start_task(self, task_id: int):
+        # When a task transition occurs (task_id > 0), estimate Fisher and save optimal parameters for previous task
+        if task_id > 0 and self.current_task_sequences:
+            self.compute_ewc_task_data()
+        self.current_task_sequences = []
+
+    def compute_ewc_task_data(self):
+        # Save copy of current parameters
+        opt_params = {}
+        for name, param in self.rnn.named_parameters():
+            opt_params[f"rnn.{name}"] = param.clone().detach()
+        for name, param in self.fc.named_parameters():
+            opt_params[f"fc.{name}"] = param.clone().detach()
+            
+        self.task_optimal_params.append(opt_params)
+        
+        # Estimate diagonal of Fisher
+        fisher = {}
+        for name, param in self.rnn.named_parameters():
+            fisher[f"rnn.{name}"] = torch.zeros_like(param)
+        for name, param in self.fc.named_parameters():
+            fisher[f"fc.{name}"] = torch.zeros_like(param)
+        
+        n_samples = 0
+        for seq in self.current_task_sequences:
+            if len(seq) < 2:
+                continue
+            n_samples += 1
+            
+            self.optimizer.zero_grad()
+            h = torch.zeros(1, self.d_hidden, device=self.h.device)
+            loss = 0.0
+            
+            for t in range(len(seq) - 1):
+                x_t = torch.zeros(self.d_in, device=self.h.device)
+                x_t[seq[t]] = 1.0
+                x_in = x_t.unsqueeze(0)
+                h = self.rnn(x_in, h)
+                logits = self.fc(h)
+                target = torch.tensor([seq[t+1]], device=self.h.device)
+                loss += self.loss_fn(logits, target)
+                
+            loss = loss / (len(seq) - 1)
+            loss.backward()
+            
+            for name, param in self.rnn.named_parameters():
+                if param.grad is not None:
+                    fisher[f"rnn.{name}"] += param.grad.detach() ** 2
+            for name, param in self.fc.named_parameters():
+                if param.grad is not None:
+                    fisher[f"fc.{name}"] += param.grad.detach() ** 2
+                    
+        for name in fisher:
+            fisher[name] = fisher[name] / max(n_samples, 1)
+            
+        self.fishers.append(fisher)
+
+
+class GRUEWCBaseline(SimpleGRUBaseline):
+    """GRU baseline with Elastic Weight Consolidation (EWC)."""
+
+    def __init__(self, d_in: int, d_out: int, d_hidden: int = 32, lr: float = 0.01, ewc_lambda: float = 100.0):
+        super().__init__(d_in, d_out, d_hidden, lr)
+        self.ewc_lambda = ewc_lambda
+        self.task_optimal_params = []
+        self.fishers = []
+        self.current_task_sequences = []
+        self.current_sequence = []
+
+    def reset_sequence_state(self):
+        super().reset_sequence_state()
+        if self.current_sequence:
+            self.current_task_sequences.append(self.current_sequence)
+            self.current_sequence = []
+
+    def train_transition(self, x: torch.Tensor, y: torch.Tensor) -> Dict[str, Any]:
+        self.current_sequence.append(x.argmax().item())
+        
+        self.optimizer.zero_grad()
+        x_in = x.unsqueeze(0)
+        self.h = self.rnn(x_in, self.h)
+        logits = self.fc(self.h)
+        target = y.argmax().unsqueeze(0)
+        
+        loss = self.loss_fn(logits, target)
+        
+        # Calculate EWC penalty
+        ewc_penalty = torch.tensor(0.0, device=x.device)
+        for task_idx in range(len(self.task_optimal_params)):
+            opt_params = self.task_optimal_params[task_idx]
+            fisher = self.fishers[task_idx]
+            # Accumulate GRU parameters
+            for name, param in self.rnn.named_parameters():
+                key = f"rnn.{name}"
+                if key in opt_params and key in fisher:
+                    ewc_penalty += (fisher[key] * (param - opt_params[key]) ** 2).sum()
+            # Accumulate FC parameters
+            for name, param in self.fc.named_parameters():
+                key = f"fc.{name}"
+                if key in opt_params and key in fisher:
+                    ewc_penalty += (fisher[key] * (param - opt_params[key]) ** 2).sum()
+                    
+        total_loss = loss + (self.ewc_lambda / 2.0) * ewc_penalty
+        total_loss.backward()
+        self.optimizer.step()
+        self.h = self.h.detach()
+        
+        return {"error": loss.item(), "ewc_penalty": ewc_penalty.item()}
+
+    def start_task(self, task_id: int):
+        if task_id > 0 and self.current_task_sequences:
+            self.compute_ewc_task_data()
+        self.current_task_sequences = []
+
+    def compute_ewc_task_data(self):
+        # Save copy of current parameters
+        opt_params = {}
+        for name, param in self.rnn.named_parameters():
+            opt_params[f"rnn.{name}"] = param.clone().detach()
+        for name, param in self.fc.named_parameters():
+            opt_params[f"fc.{name}"] = param.clone().detach()
+            
+        self.task_optimal_params.append(opt_params)
+        
+        # Estimate diagonal of Fisher
+        fisher = {}
+        for name, param in self.rnn.named_parameters():
+            fisher[f"rnn.{name}"] = torch.zeros_like(param)
+        for name, param in self.fc.named_parameters():
+            fisher[f"fc.{name}"] = torch.zeros_like(param)
+        
+        n_samples = 0
+        for seq in self.current_task_sequences:
+            if len(seq) < 2:
+                continue
+            n_samples += 1
+            
+            self.optimizer.zero_grad()
+            h = torch.zeros(1, self.d_hidden, device=self.h.device)
+            loss = 0.0
+            
+            for t in range(len(seq) - 1):
+                x_t = torch.zeros(self.d_in, device=self.h.device)
+                x_t[seq[t]] = 1.0
+                x_in = x_t.unsqueeze(0)
+                h = self.rnn(x_in, h)
+                logits = self.fc(h)
+                target = torch.tensor([seq[t+1]], device=self.h.device)
+                loss += self.loss_fn(logits, target)
+                
+            loss = loss / (len(seq) - 1)
+            loss.backward()
+            
+            for name, param in self.rnn.named_parameters():
+                if param.grad is not None:
+                    fisher[f"rnn.{name}"] += param.grad.detach() ** 2
+            for name, param in self.fc.named_parameters():
+                if param.grad is not None:
+                    fisher[f"fc.{name}"] += param.grad.detach() ** 2
+                    
+        for name in fisher:
+            fisher[name] = fisher[name] / max(n_samples, 1)
+            
+        self.fishers.append(fisher)
+
+
 class MLPWindowBaseline(SequenceModel):
     """MLP baseline that maps a sliding context window of history to predictions."""
 
