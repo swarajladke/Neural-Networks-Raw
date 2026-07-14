@@ -8,8 +8,8 @@ Ties columns and routers together under a sequential step interface.
 import torch
 import torch.nn as nn
 from typing import Dict, Any, Tuple, List
-from src.agnis.sparc.column import PredictiveColumn
-from src.agnis.sparc.router import TaskIDOracleRouter, NearestPrototypeRouter
+from agnis.sparc.column import PredictiveColumn
+from agnis.sparc.router import TaskIDOracleRouter, NearestPrototypeRouter
 
 
 class SPARCSequenceModel(nn.Module):
