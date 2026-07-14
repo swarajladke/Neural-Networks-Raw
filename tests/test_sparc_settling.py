@@ -30,8 +30,8 @@ def test_proximal_settling_exact_quadratic():
         d_output=d_output,
         alpha=0.0,  # 0 sparsity
         beta=0.5,
-        n_settle=100,  # Run many steps for tight convergence
-        step_c=0.2,  # Conservative step size
+        n_settle=500,  # Run many steps for tight convergence
+        step_c=1.0,  # Optimal theoretical Lipschitz step size
     )
 
     # Random target input z and previous state
