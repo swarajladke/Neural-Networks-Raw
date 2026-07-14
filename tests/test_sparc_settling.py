@@ -7,9 +7,9 @@ exact quadratic solutions, and parameter isolation.
 
 import pytest
 import torch
-from src.agnis.sparc.column import PredictiveColumn
-from src.agnis.sparc.router import TaskIDOracleRouter, NearestPrototypeRouter
-from src.agnis.sparc.sparc_model import SPARCSequenceModel
+from agnis.sparc.column import PredictiveColumn
+from agnis.sparc.router import TaskIDOracleRouter, NearestPrototypeRouter
+from agnis.sparc.sparc_model import SPARCSequenceModel
 
 
 def test_proximal_settling_exact_quadratic():
