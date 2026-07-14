@@ -89,8 +89,8 @@ class PredictiveColumn(nn.Module):
         h_prior = self.get_recurrent_prior(h_previous)
         h = h_prior.detach().clone()
 
-        # Lipschitz spectral-norm approximation bound upper-bound
-        d_norm_sq = torch.sum(self.D ** 2).item()
+        # Lipschitz spectral-norm approximation (L2 matrix norm)
+        d_norm_sq = (torch.linalg.matrix_norm(self.D, ord=2).item()) ** 2
         initial_step = self.step_c / (d_norm_sq + self.beta + 1e-8)
         minimum_step = initial_step * 1e-4
         backtrack_factor = 0.5
@@ -163,7 +163,8 @@ class PredictiveColumn(nn.Module):
         """Train readout head Q via supervised backprop on detached latent state."""
         h_det = h_settled.detach()
         logits = self.Q(h_det).unsqueeze(0)
-        loss = self.loss_fn(logits, target.unsqueeze(0))
+        target_idx = target.view(-1)
+        loss = self.loss_fn(logits, target_idx)
 
         self.Q_optimizer.zero_grad(set_to_none=True)
         loss.backward()
