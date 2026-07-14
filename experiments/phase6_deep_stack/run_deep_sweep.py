@@ -65,7 +65,7 @@ def main():
     parser.add_argument(
         "--models",
         type=str,
-        default="gru_baseline,rnn_baseline,rnn_replay_baseline,gru_replay_baseline,rnn_ewc_baseline,gru_ewc_baseline,seq_agnis_flat_wide,deep_agnis_2L,deep_agnis_3L,deep_agnis_3L_neurogenesis",
+        default="gru_baseline,rnn_baseline,rnn_replay_baseline,gru_replay_baseline,rnn_ewc_baseline,gru_ewc_baseline,seq_agnis_flat_wide,deep_agnis_2L,deep_agnis_3L,deep_agnis_3L_neurogenesis,sparc_task_id_oracle,sparc_nearest_prototype",
         help="Comma-separated model names to evaluate",
     )
     args = parser.parse_args()

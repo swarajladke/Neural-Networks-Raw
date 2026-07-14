@@ -1057,3 +1057,84 @@ class DeepSeqAgnisModel(SequenceModel):
             stats[f"layer{l}/maturity_mean"] = self.hierarchy._maturity(l).mean().item()
         return stats
 
+
+class SPARCSequenceWrapper(SequenceModel):
+    """Sequence prediction wrapper for the SPARC v0.1 model."""
+
+    def __init__(
+        self,
+        d_in: int,
+        d_out: int,
+        num_columns: int = 4,
+        d_latent: int = 32,
+        alpha: float = 0.01,
+        beta: float = 0.5,
+        eta_D: float = 0.01,
+        eta_R: float = 0.01,
+        eta_Q: float = 0.01,
+        step_c: float = 0.5,
+        n_settle: int = 15,
+        routing_mode: str = "task_id_oracle",
+        decay_factor: float = 0.9,
+    ):
+        from agnis.sparc.sparc_model import SPARCSequenceModel
+        self.model = SPARCSequenceModel(
+            num_columns=num_columns,
+            d_input=d_in,
+            d_latent=d_latent,
+            d_output=d_out,
+            alpha=alpha,
+            beta=beta,
+            eta_D=eta_D,
+            eta_R=eta_R,
+            eta_Q=eta_Q,
+            step_c=step_c,
+            n_settle=n_settle,
+            routing_mode=routing_mode,
+            decay_factor=decay_factor,
+        )
+        self.current_task_id = 0
+        self.d_out = d_out
+        self.use_memory = False
+        self.use_replay = False
+
+    def reset_sequence_state(self):
+        self.model.reset_states()
+
+    def start_task(self, task_id: int):
+        self.current_task_id = task_id
+
+    def train_transition(self, x: torch.Tensor, y: torch.Tensor) -> Dict[str, Any]:
+        target_idx = y.argmax()
+        logits, diag = self.model.forward_step(
+            z=x,
+            target=target_idx,
+            task_id=self.current_task_id,
+            is_training=True
+        )
+        return {"error": diag.get("readout_loss", 0.0), **diag}
+
+    def predict_transition(self, x: torch.Tensor) -> torch.Tensor:
+        dummy_target = torch.zeros(self.d_out, device=x.device)
+        logits, diag = self.model.forward_step(
+            z=x,
+            target=dummy_target.argmax(),
+            task_id=self.current_task_id,
+            is_training=False
+        )
+        return torch.softmax(logits, dim=-1)
+
+    def predict_no_state_update(self, x: torch.Tensor) -> torch.Tensor:
+        h_prev_backup = self.model.h_prev.clone()
+        prob = self.predict_transition(x)
+        self.model.h_prev.copy_(h_prev_backup)
+        return prob
+
+    def get_stats(self) -> Dict[str, Any]:
+        return {
+            "num_columns": self.model.num_columns,
+            "routing_mode": self.model.routing_mode,
+            "decay_factor": self.model.decay_factor,
+        }
+
+

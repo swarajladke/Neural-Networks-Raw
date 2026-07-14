@@ -47,7 +47,8 @@ def main():
     parser.add_argument("--model", type=str, required=True,
                         choices=['gru_baseline', 'rnn_baseline', 'rnn_replay_baseline', 'gru_replay_baseline',
                                  'rnn_ewc_baseline', 'gru_ewc_baseline', 'seq_agnis_flat_wide',
-                                 'deep_agnis_2L', 'deep_agnis_3L', 'deep_agnis_3L_neurogenesis'],
+                                 'deep_agnis_2L', 'deep_agnis_3L', 'deep_agnis_3L_neurogenesis',
+                                 'sparc_task_id_oracle', 'sparc_nearest_prototype'],
                         help="Model variant to evaluate")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--config", type=str, default="configs/kaggle_phase6.yaml", help="Path to config YAML")
@@ -164,6 +165,38 @@ def main():
         model = RNNEWCBaseline(d_in=d_symbol, d_out=d_symbol, d_hidden=config.model.d_z, ewc_lambda=100.0)
     elif model_key == 'gru_ewc_baseline':
         model = GRUEWCBaseline(d_in=d_symbol, d_out=d_symbol, d_hidden=config.model.d_z, ewc_lambda=100.0)
+    elif model_key == 'sparc_task_id_oracle':
+        from agnis.sequence.sequence_wrapper import SPARCSequenceWrapper
+        model = SPARCSequenceWrapper(
+            d_in=d_symbol,
+            d_out=d_symbol,
+            num_columns=n_tasks,
+            d_latent=32,
+            alpha=0.01,
+            beta=0.5,
+            eta_D=0.01,
+            eta_R=0.01,
+            eta_Q=0.01,
+            step_c=0.5,
+            n_settle=15,
+            routing_mode="task_id_oracle",
+        )
+    elif model_key == 'sparc_nearest_prototype':
+        from agnis.sequence.sequence_wrapper import SPARCSequenceWrapper
+        model = SPARCSequenceWrapper(
+            d_in=d_symbol,
+            d_out=d_symbol,
+            num_columns=n_tasks,
+            d_latent=32,
+            alpha=0.01,
+            beta=0.5,
+            eta_D=0.01,
+            eta_R=0.01,
+            eta_Q=0.01,
+            step_c=0.5,
+            n_settle=15,
+            routing_mode="nearest_prototype",
+        )
     else:
         raise ValueError(f"Unknown model variant: {model_key}")
 
