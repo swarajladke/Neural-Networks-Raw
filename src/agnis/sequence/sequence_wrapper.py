@@ -1059,7 +1059,7 @@ class DeepSeqAgnisModel(SequenceModel):
 
 
 class SPARCSequenceWrapper(SequenceModel):
-    """Sequence prediction wrapper for the SPARC v0.1 model."""
+    """Sequence prediction wrapper for the SPARC v0.2 model."""
 
     def __init__(
         self,
@@ -1098,21 +1098,174 @@ class SPARCSequenceWrapper(SequenceModel):
         self.use_memory = False
         self.use_replay = False
 
+        # Router optimizer (trains only the router projection projection parameters)
+        self.router_optimizer = None
+        if routing_mode in [
+            "supervised_router",
+            "energy_distilled_router",
+            "learned_router_no_distill",
+            "learned_router_distill",
+            "learned_router_mixture",
+        ]:
+            self.router_optimizer = torch.optim.Adam(self.model.router.parameters(), lr=1e-3)
+            # Freeze column and head experts at initialization
+            self.model.freeze_experts()
+
+        # Calibration & Route replay distillation structures
+        self.energy_calibration_buffers = {j: [] for j in range(num_columns)}
+        self.route_replay_buffer = []
+
     def reset_sequence_state(self):
         self.model.reset_states()
 
     def start_task(self, task_id: int):
+        # Boundary: Run calibration for the task we just completed (task_id - 1)
+        if task_id > 0 and (task_id - 1) in self.energy_calibration_buffers:
+            buffer_data = self.energy_calibration_buffers[task_id - 1]
+            if len(buffer_data) > 0:
+                # Compute robust Median / MAD calibration
+                tensor_data = torch.tensor(buffer_data)
+                med = tensor_data.median().item()
+                mad = (tensor_data - med).abs().median().item()
+                # Store in teacher and primary MinimumEnergyRouter calibration
+                self.model.energy_teacher.set_calibration(
+                    column_idx=task_id - 1,
+                    median=med,
+                    mad=mad,
+                    n_samples=len(buffer_data)
+                )
+                if hasattr(self.model.router, "set_calibration"):
+                    self.model.router.set_calibration(
+                        column_idx=task_id - 1,
+                        median=med,
+                        mad=mad,
+                        n_samples=len(buffer_data)
+                    )
+                print(f"[Calibration] Column {task_id - 1} Calibrated: Median={med:.4f}, MAD={mad:.4f}")
+                self.energy_calibration_buffers[task_id - 1] = []
+
         self.current_task_id = task_id
 
     def train_transition(self, x: torch.Tensor, y: torch.Tensor) -> Dict[str, Any]:
         target_idx = y.argmax()
+
+        # 1. Forward step through SPARC Model
         logits, diag = self.model.forward_step(
             z=x,
             target=target_idx,
             task_id=self.current_task_id,
             is_training=True
         )
-        return {"error": diag.get("readout_loss", 0.0), **diag}
+
+        col_idx = diag.get("active_column", 0)
+
+        # Collect settling energy for robust calibration later
+        with torch.no_grad():
+            # Get energy of winner column and add to calibration buffer
+            # We decay previous state as prior
+            prior_winner = self.model.decay_factor * self.model.h_prev[col_idx].clone()
+            raw_energy = self.model.columns[col_idx].energy(x, self.model.h_prev[col_idx], prior_winner).item()
+            self.energy_calibration_buffers[self.current_task_id].append(raw_energy)
+
+        # 2. Replay cache update
+        if self.model.routing_mode in [
+            "supervised_router",
+            "energy_distilled_router",
+            "learned_router_no_distill",
+            "learned_router_distill",
+            "learned_router_mixture",
+        ]:
+            if len(self.route_replay_buffer) < 2000:
+                if torch.rand(1).item() < 0.1:
+                    with torch.no_grad():
+                        raw_logits = self.model.router.contextual_logits(self.model.context_state)
+                        self.route_replay_buffer.append({
+                            "context": self.model.context_state.clone().detach(),
+                            "teacher_raw_logits": raw_logits.clone().detach(),
+                            "domain_id": self.current_task_id,
+                        })
+
+        # 3. Router optimization step
+        router_loss_val = 0.0
+        if self.router_optimizer is not None:
+            self.router_optimizer.zero_grad()
+
+            # 3.1 Base router objective loss
+            if self.model.routing_mode == "supervised_router":
+                raw_logits = self.model.router.contextual_logits(self.model.context_state)
+                loss_objective = F.cross_entropy(raw_logits.unsqueeze(0), torch.tensor([self.current_task_id], device=x.device))
+
+                # Load balancing: D_KL(p_batch || mean_routes)
+                mean_routes = diag["routing_weights"]
+                mean_routes = mean_routes / mean_routes.sum().clamp_min(1e-8)
+                target_usage = torch.zeros(self.model.num_columns, device=x.device)
+                target_usage[self.current_task_id] = 1.0
+                balance_loss = F.kl_div(mean_routes.clamp_min(1e-8).log(), target_usage, reduction="sum")
+
+                loss_total = loss_objective + 0.1 * balance_loss
+
+            elif self.model.routing_mode == "energy_distilled_router":
+                with torch.no_grad():
+                    _, _, calibrated_energies, _ = self.model.energy_teacher.route_step(
+                        x, list(self.model.h_prev), self.model.decay_factor
+                    )
+                    teacher_energies = torch.tensor(calibrated_energies, device=x.device)
+                    q = torch.softmax(-teacher_energies / 1.0, dim=-1)
+
+                raw_logits = self.model.router.contextual_logits(self.model.context_state)
+                student_log_probs = torch.log_softmax(raw_logits, dim=-1)
+                loss_objective = F.kl_div(student_log_probs, q, reduction="sum")
+
+                # Load balancing: D_KL(q || mean_routes)
+                mean_routes = diag["routing_weights"]
+                mean_routes = mean_routes / mean_routes.sum().clamp_min(1e-8)
+                balance_loss = F.kl_div(mean_routes.clamp_min(1e-8).log(), q, reduction="sum")
+
+                loss_total = loss_objective + 0.1 * balance_loss
+
+            elif self.model.routing_mode == "learned_router_mixture":
+                # Router C loss: Task cross entropy loss on mixture log probability
+                # logits is mixture_log_probs (already log_softmaxed)
+                loss_objective = F.nll_loss(logits, target_idx.unsqueeze(0))
+                loss_total = loss_objective
+
+            else:  # learned_router_no_distill, learned_router_distill
+                raw_logits = self.model.router.contextual_logits(self.model.context_state)
+                loss_objective = F.cross_entropy(raw_logits.unsqueeze(0), torch.tensor([col_idx], device=x.device))
+                loss_total = loss_objective
+
+            # 3.2 Interleaved Cached Route Distillation
+            distill_loss = 0.0
+            if len(self.route_replay_buffer) > 0 and self.model.routing_mode in [
+                "energy_distilled_router",
+                "learned_router_distill",
+                "learned_router_mixture",
+            ]:
+                indices = torch.randint(0, len(self.route_replay_buffer), (min(4, len(self.route_replay_buffer)),))
+                replay_entries = [self.route_replay_buffer[idx] for idx in indices]
+
+                dist_temp = 2.0
+                for entry in replay_entries:
+                    rep_context = entry["context"].to(x.device)
+                    rep_teacher_logits = entry["teacher_raw_logits"].to(x.device)
+                    rep_student_logits = self.model.router.contextual_logits(rep_context)
+
+                    teacher_probs = torch.softmax(rep_teacher_logits / dist_temp, dim=-1)
+                    student_log_probs = torch.log_softmax(rep_student_logits / dist_temp, dim=-1)
+
+                    distill_loss += (dist_temp ** 2) * F.kl_div(
+                        student_log_probs.unsqueeze(0),
+                        teacher_probs.unsqueeze(0),
+                        reduction="batchmean"
+                    )
+                distill_loss /= len(replay_entries)
+
+            loss_total = loss_total + 1.0 * distill_loss
+            loss_total.backward()
+            self.router_optimizer.step()
+            router_loss_val = loss_total.item()
+
+        return {"error": diag.get("readout_loss", 0.0), "router_loss": router_loss_val, **diag}
 
     def predict_transition(self, x: torch.Tensor) -> torch.Tensor:
         dummy_target = torch.zeros(self.d_out, device=x.device)
@@ -1122,12 +1275,20 @@ class SPARCSequenceWrapper(SequenceModel):
             task_id=self.current_task_id,
             is_training=False
         )
+        if self.model.routing_mode == "learned_router_mixture":
+            return torch.exp(logits) # logits is log-probabilities in mixture training/inference
         return torch.softmax(logits, dim=-1)
 
     def predict_no_state_update(self, x: torch.Tensor) -> torch.Tensor:
         h_prev_backup = self.model.h_prev.clone()
+        context_state_backup = self.model.context_state.clone()
+        smoothed_logits_backup = self.model.smoothed_logits.clone()
+
         prob = self.predict_transition(x)
+
         self.model.h_prev.copy_(h_prev_backup)
+        self.model.context_state.copy_(context_state_backup)
+        self.model.smoothed_logits.copy_(smoothed_logits_backup)
         return prob
 
     def get_stats(self) -> Dict[str, Any]:

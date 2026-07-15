@@ -81,7 +81,16 @@ class PredictiveColumn(nn.Module):
         grad_temp = self.beta * (h - h_prior)
         return grad_recon + grad_temp
 
-    def settle(self, z: torch.Tensor, h_previous: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, Any]]:
+    def settle(
+        self,
+        z: torch.Tensor,
+        h_previous: torch.Tensor,
+        early_stop: bool = False,
+        min_steps: int = 5,
+        energy_tol: float = 1e-4,
+        state_tol: float = 1e-4,
+        consecutive_steps: int = 2,
+    ) -> Tuple[torch.Tensor, Dict[str, Any]]:
         """
         Run proximal gradient settling with backtracking line search to infer latent h.
         Returns settled latent state and diagnostic statistics.
@@ -98,8 +107,12 @@ class PredictiveColumn(nn.Module):
         rejected_steps = 0
         failures = 0
         backtrack_count = 0
+        consecutive_converged = 0
+        epsilon = 1e-8
+        steps_taken = 0
 
         for s in range(self.n_settle):
+            steps_taken = s + 1
             old_h = h.clone()
             old_energy = self.energy(z, old_h, h_prior).item()
 
@@ -128,12 +141,27 @@ class PredictiveColumn(nn.Module):
                 if step_size < initial_step:
                     backtrack_count += 1
 
+            if early_stop:
+                new_energy = self.energy(z, h, h_prior).item()
+                relative_energy_change = abs(new_energy - old_energy) / (abs(old_energy) + epsilon)
+                relative_state_change = (torch.linalg.vector_norm(h - old_h) / (torch.linalg.vector_norm(old_h) + epsilon)).item()
+
+                converged = (
+                    s + 1 >= min_steps
+                    and relative_energy_change < energy_tol
+                    and relative_state_change < state_tol
+                )
+                consecutive_converged = consecutive_converged + 1 if converged else 0
+                if consecutive_converged >= consecutive_steps:
+                    break
+
         diagnostics = {
             "rejected_steps": rejected_steps,
             "line_search_failures": failures,
             "backtrack_occurrences": backtrack_count,
             "final_energy": self.energy(z, h, h_prior).item(),
             "active_fraction": torch.mean((torch.abs(h) > 1e-5).float()).item(),
+            "steps_taken": steps_taken,
         }
 
         return h, diagnostics
