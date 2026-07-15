@@ -1275,8 +1275,6 @@ class SPARCSequenceWrapper(SequenceModel):
             task_id=self.current_task_id,
             is_training=False
         )
-        if self.model.routing_mode == "learned_router_mixture":
-            return torch.exp(logits) # logits is log-probabilities in mixture training/inference
         return torch.softmax(logits, dim=-1)
 
     def predict_no_state_update(self, x: torch.Tensor) -> torch.Tensor:

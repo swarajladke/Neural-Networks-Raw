@@ -133,8 +133,14 @@ def test_mixture_probability_sums_to_one():
     wrapper = SPARCSequenceWrapper(d_in=8, d_out=4, num_columns=3, routing_mode="learned_router_mixture")
     z = torch.randn(8)
     
-    # Get prediction log-probabilities
-    log_probs = wrapper.predict_transition(z)
-    probs = log_probs # predict_transition for mixture returns exponentiated probabilities
+    # Run a forward step with is_training=True (which triggers the probability mixture calculation)
+    logits, diag = wrapper.model.forward_step(
+        z=z,
+        target=torch.tensor([1]),
+        task_id=0,
+        is_training=True
+    )
+    # Logits returned is log_probs in mixture mode
+    probs = torch.exp(logits)
     
     assert torch.allclose(probs.sum(), torch.tensor(1.0)), "Mixture output probability must sum to exactly 1.0"

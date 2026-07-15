@@ -168,6 +168,8 @@ class PredictiveColumn(nn.Module):
 
     def update_predictive_parameters(self, z: torch.Tensor, h: torch.Tensor, h_previous: torch.Tensor):
         """Update D and R via local error rules, treating latents as fixed."""
+        if not self.D.requires_grad:
+            return
         h_det = h.detach()
         h_prev_det = h_previous.detach()
         h_prior = self.get_recurrent_prior(h_prev_det)
@@ -189,6 +191,14 @@ class PredictiveColumn(nn.Module):
 
     def update_readout(self, h_settled: torch.Tensor, target: torch.Tensor) -> float:
         """Train readout head Q via supervised backprop on detached latent state."""
+        if not next(self.Q.parameters()).requires_grad:
+            with torch.no_grad():
+                h_det = h_settled.detach()
+                logits = self.Q(h_det).unsqueeze(0)
+                target_idx = target.view(-1)
+                loss = self.loss_fn(logits, target_idx)
+            return loss.item()
+
         h_det = h_settled.detach()
         logits = self.Q(h_det).unsqueeze(0)
         target_idx = target.view(-1)
