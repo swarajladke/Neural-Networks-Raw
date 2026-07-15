@@ -1,9 +1,11 @@
 # Phase 6 Deep Hierarchical AGNIS Sweep Summary
 
-Auto-generated summary report of all completed deep hierarchical sweep configurations, including standard Continual Learning baselines (EWC and Replay controls).
+Auto-generated summary report of all completed deep hierarchical sweep configurations, including standard Continual Learning baselines (EWC and Replay controls) and SPARC v0.1 Phase 1A.
 
 | Model | Seeds | Cont Acc | Cont BPC | Peak Acc | Retained Acc | FWT | Acc Forg | BPC Forg | Probe L0 | Probe L1 | Probe L2 | Rep Rate | Dist-2 | Dist-3 | Final Dims | Births | Prunes | Runtime |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **sparc_nearest_prototype** | 5 | 0.378+-0.002 | 3.492+-0.026 | 0.452+-0.003 | 0.378+-0.002 | 0.288+-0.009 | 0.075+-0.005 | 1.296+-0.029 | - | - | - | 57.0% | 22.7% | 43.0% | 64 | 0.0 | 0.0 | 3919.7s |
+| **sparc_task_id_oracle** | 5 | 0.379+-0.001 | 3.561+-0.031 | 0.452+-0.003 | 0.379+-0.001 | 0.300+-0.015 | 0.073+-0.003 | 1.355+-0.036 | - | - | - | 56.2% | 23.1% | 43.8% | 64 | 0.0 | 0.0 | 5545.9s |
 | **deep_agnis_2L** | 5 | 0.040+-0.003 | 5.644+-0.000 | 0.136+-0.021 | 0.040+-0.003 | 0.072+-0.021 | 0.096+-0.023 | 0.061+-0.014 | 0.803 | 0.803 | - | 22.6% | 41.6% | 77.4% | 64/32 | 0.0 | 0.0 | 2691.8s |
 | **deep_agnis_3L** | 5 | 0.040+-0.003 | 5.644+-0.000 | 0.127+-0.018 | 0.040+-0.003 | 0.062+-0.027 | 0.087+-0.019 | 0.060+-0.011 | 0.803 | 0.803 | 0.803 | 22.4% | 42.3% | 77.6% | 64/32/16 | 0.0 | 0.0 | 3048.1s |
 | **deep_agnis_3L_neurogenesis** | 5 | 0.040+-0.003 | 5.644+-0.000 | 0.132+-0.018 | 0.040+-0.003 | 0.077+-0.020 | 0.093+-0.018 | 0.058+-0.011 | 0.803 | 0.803 | 0.803 | 22.7% | 41.5% | 77.3% | 64/48/24 | 24.2 | 0.0 | 2617.2s |
