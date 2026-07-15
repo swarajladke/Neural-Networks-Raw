@@ -6,6 +6,7 @@ Model wrappers for Seq AGNIS and MLP/RNN baselines.
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from typing import Optional, Dict, Any
 from agnis.utils.config import AGNISConfig
 
