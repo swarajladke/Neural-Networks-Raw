@@ -26,7 +26,7 @@ class TaskIDOracleRouter:
         return col_idx
 
 
-class NearestPrototypeRouter:
+class NearestPrototypeRouter(nn.Module):
     """
     Nearest Prototype Router.
     A non-oracle, nonparametric router that maps input vectors to columns
@@ -34,6 +34,7 @@ class NearestPrototypeRouter:
     """
 
     def __init__(self, d_latent: int, num_columns: int, decay: float = 0.99):
+        super().__init__()
         self.d_latent = d_latent
         self.num_columns = num_columns
         self.decay = decay
@@ -45,7 +46,7 @@ class NearestPrototypeRouter:
 
     def register_buffer(self, name: str, tensor: torch.Tensor):
         """Helper to store persistent state as buffers."""
-        setattr(self, name, tensor)
+        super().register_buffer(name, tensor)
 
     def route(self, z: torch.Tensor) -> int:
         """Finds the nearest column prototype to input z."""
@@ -66,9 +67,9 @@ class NearestPrototypeRouter:
         with torch.no_grad():
             z_det = z.detach()
             if self.counts[col_idx] == 0:
-                self.prototypes[col_idx] = z_det
+                self.prototypes[col_idx].copy_(z_det)
             else:
                 # Running average update
-                self.prototypes[col_idx] = self.decay * self.prototypes[col_idx] + (1 - self.decay) * z_det
+                self.prototypes[col_idx].copy_(self.decay * self.prototypes[col_idx] + (1 - self.decay) * z_det)
 
             self.counts[col_idx] += 1

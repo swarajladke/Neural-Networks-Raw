@@ -102,7 +102,7 @@ class SPARCSequenceModel(nn.Module):
 
     def register_buffer(self, name: str, tensor: torch.Tensor):
         """Helper to store persistent state as buffers."""
-        setattr(self, name, tensor)
+        super().register_buffer(name, tensor)
 
     def reset_states(self):
         """Reset latent recurrent history and router states to zero (at sequence boundaries)."""
@@ -171,9 +171,9 @@ class SPARCSequenceModel(nn.Module):
             routing_weights, soft_probs, new_context, new_smoothed_logits = self.router.route(
                 z, context_state, smoothed_logits
             )
-            # Update external states safely (detached)
-            self.context_state = new_context.detach()
-            self.smoothed_logits = new_smoothed_logits.detach()
+            # Update external states safely (detached, in-place copy to preserve device)
+            self.context_state.copy_(new_context.detach())
+            self.smoothed_logits.copy_(new_smoothed_logits.detach())
             col_idx = int(routing_weights.argmax(dim=-1).item())
 
         # Compute candidate priors for all columns (decay losers exactly once)

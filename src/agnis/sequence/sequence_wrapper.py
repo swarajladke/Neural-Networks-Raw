@@ -1099,6 +1099,10 @@ class SPARCSequenceWrapper(SequenceModel):
         self.use_memory = False
         self.use_replay = False
 
+        # Determine device and move model
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.to(self.device)
+
         # Router optimizer (trains only the router projection projection parameters)
         self.router_optimizer = None
         if routing_mode in [
@@ -1148,6 +1152,8 @@ class SPARCSequenceWrapper(SequenceModel):
         self.current_task_id = task_id
 
     def train_transition(self, x: torch.Tensor, y: torch.Tensor) -> Dict[str, Any]:
+        x = x.to(self.device)
+        y = y.to(self.device)
         target_idx = y.argmax()
 
         # 1. Forward step through SPARC Model
@@ -1269,7 +1275,8 @@ class SPARCSequenceWrapper(SequenceModel):
         return {"error": diag.get("readout_loss", 0.0), "router_loss": router_loss_val, **diag}
 
     def predict_transition(self, x: torch.Tensor) -> torch.Tensor:
-        dummy_target = torch.zeros(self.d_out, device=x.device)
+        x = x.to(self.device)
+        dummy_target = torch.zeros(self.d_out, device=self.device)
         logits, diag = self.model.forward_step(
             z=x,
             target=dummy_target.argmax(),
@@ -1292,7 +1299,8 @@ class SPARCSequenceWrapper(SequenceModel):
 
     def advance_state_only(self, x: torch.Tensor, y: torch.Tensor):
         """Step transient recurrent states without mutating learned parameters."""
-        dummy_target = torch.zeros(self.d_out, device=x.device)
+        x = x.to(self.device)
+        dummy_target = torch.zeros(self.d_out, device=self.device)
         self.model.forward_step(
             z=x,
             target=dummy_target.argmax(),
