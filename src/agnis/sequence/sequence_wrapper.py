@@ -1276,7 +1276,7 @@ class SPARCSequenceWrapper(SequenceModel):
             task_id=self.current_task_id,
             is_training=False
         )
-        return torch.softmax(logits, dim=-1)
+        return torch.softmax(logits, dim=-1).squeeze(0)
 
     def predict_no_state_update(self, x: torch.Tensor) -> torch.Tensor:
         h_prev_backup = self.model.h_prev.clone()
@@ -1289,6 +1289,16 @@ class SPARCSequenceWrapper(SequenceModel):
         self.model.context_state.copy_(context_state_backup)
         self.model.smoothed_logits.copy_(smoothed_logits_backup)
         return prob
+
+    def advance_state_only(self, x: torch.Tensor, y: torch.Tensor):
+        """Step transient recurrent states without mutating learned parameters."""
+        dummy_target = torch.zeros(self.d_out, device=x.device)
+        self.model.forward_step(
+            z=x,
+            target=dummy_target.argmax(),
+            task_id=self.current_task_id,
+            is_training=False
+        )
 
     def get_stats(self) -> Dict[str, Any]:
         return {
